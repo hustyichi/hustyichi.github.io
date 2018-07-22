@@ -104,6 +104,12 @@ layout: default
                 <div id="cloud-tie-wrapper" class="cloud-tie-wrapper"></div>
                 <!-- 网易云跟帖 评论框 end -->
                 {% endif %}
+
+                {% if site.gitment_username %}
+                <!-- gitment 评论框-->
+                <div id="container"></div>
+                <link rel="stylesheet" href="https://imsun.github.io/gitment/style/default.css">
+                {% endif %}
             </div>  
 
     <!-- Side Catalog Container -->
@@ -196,6 +202,31 @@ layout: default
 <!-- disqus 公共JS代码 end -->
 {% endif %}
 
+{% if site.gitment_username %}
+<!-- gitment 评论Js代码 -->
+<script src="https://imsun.github.io/gitment/dist/gitment.browser.js"></script>
+<script>
+  var id = window.location.pathname;
+  var start = (id[0] === '/' ? 1 : 0);
+  var end = (id[id.length - 1] === '/'? id.length - 1 : id.length);
+  var trans_id = id.substring(start, end).split('/').join('_');
+
+  var gitment_username = "{{site.gitment_username}}";
+  var gitment_repo = "{{site.gitment_repo}}";
+  var gitment_client_id = "{{site.gitment_client_id}}";
+  var gitment_client_secret = "{{site.gitment_client_secret}}";
+  var gitment = new Gitment({
+    id: trans_id,
+    owner: gitment_username,
+    repo: gitment_repo,
+    oauth: {
+      client_id: gitment_client_id,
+      client_secret: gitment_client_secret,
+    },
+  });
+  gitment.render('container');
+</script>
+{% endif %}
 
 {% if site.anchorjs %}
 <!-- async load function -->

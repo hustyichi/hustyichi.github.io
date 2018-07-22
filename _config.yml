@@ -52,11 +52,16 @@ kramdown:
 
 
 # Disqus settings
-# disqus_username: hux
+# disqus_username: hustyichi
 
 # Netease settings
 netease_comment: false
 
+# gitment settings
+gitment_username: comment-jason
+gitment_repo: hustyichi.github.io
+gitment_client_id: 6c5dd6a9381fcd074e23
+gitment_client_secret: 110173f705724ed982e78e626f29a5ed4d37d01f
 
 
 # Analytics settings
