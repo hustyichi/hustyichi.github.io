@@ -1,0 +1,159 @@
+---
+layout: post
+title: 'Oh my zsh 配置与插件'
+subtitle:   "Configurations of oh my zsh"
+date:       2018-09-19 21:25:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - tools
+---
+
+## Oh my zsh 介绍
+按照 [oh my zsh 官方](https://github.com/robbyrussell/oh-my-zsh)的介绍，oh my zsh 是一种你用了其他人就会追着喊着叫你天才的工具，听起来是某种装逼利器，而且效率成倍提升。那么oh my zsh 到底是什么呢？在我看来，可以理解为： 装逼的主题皮肤 + 提升效率的插件。可以将你的终端效率成倍提升，简直懒人神器。那还等什么，赶紧用起来
+
+## 安装
+oh my zsh 是为zsh终端准备的，如果没有zsh，可以按照[教程](https://github.com/robbyrussell/oh-my-zsh/wiki/Installing-ZSH)安装，安装zsh之后，可以继续安装oh my zsh，根据官方的方案，可以采用`wget`和`curl`在终端安装。具体指令如下：
+
+使用`curl`安装oh my zsh可以执行下面指令：
+
+```
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/robbyrussell/oh-my-zsh/master/tools/install.sh)"
+```
+使用`wget`安装oh my zsh可以执行下面指令：
+
+```
+sh -c "$(wget https://raw.githubusercontent.com/robbyrussell/oh-my-zsh/master/tools/install.sh -O -)"
+```
+大家可以看用什么工具顺手就用哪个
+
+## 主题配置
+配置主题嘛，官方介绍得比较简单，直接修改zsh的配置文件`~/.zshrc`，打开此文件，可以看到默认主题的配置：
+
+```
+ZSH_THEME="robbyrussell"
+```
+默认主题逼格不太够，官方推荐另一款`agnoster`，看了一下，确实不错，相对默认主题确实养眼很多
+
+![agnoster](/img/in-post/oh-my-zsh/agnoster.png)
+
+于是将配置文件修改为`agnoster`，修改配置并生效
+
+```
+ZSH_THEME="agnoster"
+```
+结果发现效果如下所示：
+
+![first](/img/in-post/oh-my-zsh/first.jpg)
+
+然后注意到官方的提示说很多主题需要安装字体，于是安装好字体：
+
+```
+git clone https://github.com/powerline/fonts.git --depth=1
+cd fonts
+./install.sh
+```
+
+结果发现效果如下所示：
+
+![first](/img/in-post/oh-my-zsh/first.jpg)
+
+莫不是在和我开玩笑，一番搜索之后发现，iTerm2需要额外配置，需要在终端中选中刚刚安装的字体，点击iTerms的菜单Preferences，进行配置，配置如下图所示：
+
+![change](/img/in-post/oh-my-zsh/change.jpg)
+
+马上就看到效果，我们想要的效果已经出现了
+
+![finish](/img/in-post/oh-my-zsh/finish.jpg)
+
+至此，主题`agnoster`已经配置好了，大家可以根据自己的需要修改主题。更多主题可以查看[官方wiki](https://github.com/robbyrussell/oh-my-zsh/wiki/themes)
+
+## 插件配置
+前面配置完主题，有了逼格，后续使用插件，才是真正能提升效率的。oh my zsh是一套框架，他可以支持不同的插件，从而增强终端的功能。插件的配置也很简单，一般情况下，只需要修改`~/.zshrc`下面的plugins字段，将想要的插件加入其中就可以了，然后执行`source ~/.zshrc`即可启用生效。默认情况下可以看到:
+
+```
+plugins=(git)
+```
+如果我希望添加vi-mode插件，只需要将上面的字段修改为如下所示然后生效即可
+
+```
+plugins=(git vi-mode)
+```
+下面对一些实用的插件进行推荐：
+
+#### git 插件
+git 插件是oh my zsh默认开启的插件，利用alias提供了很多的命令映射，可以帮忙大大缩短命令的输入命令的长度，常用的命令映射如下所示:
+
+| alias | command | 
+| ----  | ----    |
+| g | git |
+| ga | git add | 
+| gaa | git add --all | 
+| gb | git branch |
+| gc | git commit -v |
+| gc! | git commit -v --emend |
+| gcam	| git commit -a -m |
+| gcb | git checkout -b |
+| gcm | git checkout master |
+| gco | git checkout |
+| gcmsg |	git commit -m |
+| gd |	git diff |
+| gl |	git pull |
+| gp |	git push |
+| grb | git rebase |
+| grba | git rebase --abort | 
+| grbc	 | git rebase --continue |
+| grbi	| git rebase -i |
+| gsta	| git stash save |
+| gstaa |	git stash apply |
+| gstp	| git stash pop |
+| gstc	| git stash clear |
+
+上面列举了一些常用的指令的映射，想要查看完成的指令映射可以去[git wiki](https://github.com/robbyrussell/oh-my-zsh/wiki/Plugin:git)
+
+#### zsh-autosuggestions 插件
+zsh-autosuggestions 是一款可以自动提示命令的插件，当你输入指令时，会自动推测你可能需要输入的指令，如何如何你的要求，可以直接按下右键-> 即可自动补全完整指令，实际测试下来，补全效率很高。
+
+安装插件可以直接输入下面的命令：
+
+```
+git clone git://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
+```
+和之前说的一样，将插件添加至配置文件`~/.zshrc`中，然后执行`source ~/.zshrc`即可启用生效。效果类似：
+
+```
+plugins=(zsh-autosuggestions git)
+```
+在配置好之后，我发现这款插件提示的字体基本看不到，原因在于颜色太浅，于是前往修改配置，首先跳转至 ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions 目录下，用 vim 打开 zsh-autosuggestions.zsh 文件，修改 ZSH_AUTOSUGGEST_HIGHLIGHT_STYLE='fg=11'，就可以正常看到提示命令了。
+
+#### z 插件
+z 是一款自动跳转的插件，对于你跳转后的目录，之后可以直接输入最终目录的名字，就可以正确跳转了，效果如下所示：
+
+![z](/img/in-post/oh-my-zsh/z.jpg)
+
+大大简化目录跳转的效率，而且z插件的安装也非常简单，由于是内置的插件，只需要在`~/.zshrc`的plugins中添加 z ,然后执行`source ~/.zshrc`即可启用生效
+
+#### d 插件
+d是一款查看最近跳转目录的插件，输入d之后可以查看最近跳转的目录，最近跳转目录都会有对应的编号，比如0，1，2等，直接输入编号就可以跳转至最近跳转的目录。这个插件也是内置的插件，直接在配置`~/.zshrc`的plugins中添加 d ，然后执行`source ~/.zshrc`即可启用生效
+
+#### vi-mode 插件
+目前终端的输入，有一个很不爽的是终端输入文字间的跳转，比如最开始输入错了一个字母，等到最后才发现，是用左右键一个又一下地将光标移动到最左边，修改好了再移动回来，还是取消后重新输入呢，都是一个很忧伤的故事。
+
+vi-mode就可以将vim党从这种尴尬的处境中解脱出来，安装好插件后，默认是输入模式，你可以正常输入，当需要跳转时，按下Esc轻松切换至命令模式，然后你就可以随意跳转了。具体的vim行内跳转命令就不科普了，大家可以自行google。相信我，vim党绝对抵挡不住这种诱惑
+
+这款也是内置zsh插件，因此在`~/zshrc`的plugins中添加 vi-mode ，然后执行`source ~/.zshrc`即可启用生效
+
+#### zsh-syntax-highlighting 插件
+这是一款帮你将输入的指令进行高亮的插件，当你输入不合法的指令，在输入过程中，就可以看到指令会是红色，当输入合法指令时，颜色就是其他正常的配色。总之，可以在你敲击Enter确定命令的合法性，也可以帮你把命令展示得比较有美感。效果如下所示：
+
+![syntax](/img/in-post/oh-my-zsh/syntax.jpg)
+
+由于不是内置插件，因此需要执行下面指令进行安装
+
+```
+git clone https://github.com/zsh-users/zsh-syntax-highlighting.git ${ZSH_CUSTOM:-~/.oh-my-zsh/custom}/plugins/zsh-syntax-highlighting
+```
+然后将插件添加至配置文件`~/.zshrc`的plugins中进行启用，添加内容为 `zsh-syntax-highlighting`，然后执行`source ~/.zshrc`即可启用生效
+
+上面介绍的只是一些常用的插件，如果有兴趣的话，可以查看[官方Plugins的wiki](https://github.com/robbyrussell/oh-my-zsh/wiki/Plugins)查找更多好玩的插件。
