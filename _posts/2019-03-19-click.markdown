@@ -1,0 +1,275 @@
+---
+layout: post
+title: '从 Flask-script 迁移到 Click'
+subtitle:   "Migrating from flask-script to click"
+date:       2019-03-19 8:01:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+
+---
+
+## 基础介绍
+
+Flask-script 是一个适用于 Flask 框架的拓展，可以帮助更方便地写脚本，方便线上执行一些临时的代码。使用的流程如下所示：
+
+首先你需要在 Flask 项目下新建一个`manage.py` 的脚本文件，此后增加临时执行的方法，比如下面增加一个`hello` 方法
+
+```python
+# manage.py
+
+from flask import Flask
+from flask_script import Manager
+
+app = Flask(__name__)
+manager = Manager(app)
+
+@manager.command
+def hello():
+    print "hello"
+
+if __name__ == "__main__":
+    manager.run()
+```
+
+之后可以通过下面的命令直接执行`hello` 方法
+
+```python
+python manage.py hello
+```
+
+通过 Flask-script 可以将临时执行的脚本统一管理，需要执行时，就可以很方便地运行起来
+
+但是前一阵子做项目的版本升级，去确认了一下 Flask-script 的版本，发现没有新版本出现，而[Flask-script 对应的 github](https://github.com/smurfix/flask-script) 也显示项目不再维护了，而 Flask 项目也引入了新的拓展 Click 可以代替 Flask-script，于是替换之
+
+## Click 介绍
+
+Click 是一个 Flask 项目引入的一个拓展包，可以帮助写出更漂亮的命令行接口，为了看下具体的使用体验，可以看下官方的小例子：
+
+```python
+# hello.py
+
+import click
+
+@click.command()
+@click.option('--count', default=1, help='Number of greetings.')
+@click.option('--name', prompt='Your name',
+              help='The person to greet.')
+def hello(count, name):
+    """Simple program that greets NAME for a total of COUNT times."""
+    for x in range(count):
+        click.echo('Hello %s!' % name)
+
+if __name__ == '__main__':
+    hello()
+```
+
+最后执行的结果如下所示：
+
+```python
+$ python hello.py --count=3
+Your name: John
+Hello John!
+Hello John!
+Hello John!
+```
+
+可以看到执行上面的命令，接受两个参数，一个是`--count` 通过执行命令时手动添加参数来实现，另一个是`name` 通过执行时交互式获取输入。
+
+可以看到通过 click 提供的装饰器，可以很方便地实现比较强大的交互式的功能，但是也注意到一个问题，之前的 Flask-script 可以在执行时通过参数指定执行的命令，而 Click 看起来是直接执行对应的命令，这样就在项目中，就没有办法很方便地任意执行命令了，那么有办法做到吗？这边先卖个关子，最后再进行解答
+
+#### click.command
+
+Click 中最基础的就是单个命令(command)，通过装饰器`@click.command()` 可以将一个 Python 方法转换为一个 Click 命令。最简单的情况下如下所示：
+
+```python
+# hello_world.py
+
+import click
+
+@click.command()
+def hello():
+    click.echo('Hello World!')
+    
+if __name__ == '__main__':
+   hello()
+```
+
+而装饰为命令后需要执行此命令，使用 `python hello_world.py` ，即可执行此命令，最基础的情况下与直接执行此方法看起来没有什么区别
+
+#### click.option
+
+Click 中的 option 是命令中的参数获取方式，可以通过不同的形式获取输入参数。
+
+最基础的情况下可以使用 option 表示一个基础的输入参数，使用类似如下所示：
+
+```python
+@click.command()
+@click.option('--n', default=1)
+def dots(n):
+    click.echo('.' * n)
+```
+
+上面的代码支持参数`-—n`, 执行时类似如下所示：
+
+```python
+$ dots --n=2
+..
+```
+
+除了最基础的情况外，还有一些更高级的 option 的用法：
+
+- 使用`nargs` 可以支持多个同样类型的参数，代码类似如下所示：
+
+```python
+@click.option('--pos', nargs=2, type=float)
+```
+
+- 使用类型元组支持多个不同类型的参数，代码如下所示：
+
+```python
+@click.option('--item', type=(str, int))
+```
+
+- 采用两个使用`/` 分开的参数分别表示布尔真和假，代码如下所示：
+
+```python
+@click.option('--shout/--no-shout', default=False)
+```
+
+- 使用`click.choice() ` 用于将参数从特定的列表中进行选择， 代码如下所示：
+
+```python
+@click.option('--hash-type', type=click.Choice(['md5', 'sha1']))
+```
+
+- 使用`prompt` 可以实现交互式输入值，代码如下所示：
+
+```python
+@click.option('--name', prompt='Your name please')
+```
+
+- 使用`hide_input` 可以实现隐藏输入，使用`confirmation_prompt` 可以实现两次输入并比对，适合密码输入的情况，代码如下所示：
+
+```python
+@click.option('--password', prompt=True, hide_input=True,
+              confirmation_prompt=True)
+```
+
+- 使用`envvar` 可以获取环境变量中的值，代码如下所示：
+
+```python
+@click.option('--username', envvar='USERNAME')
+```
+
+- 使用`IntRange` 可以获取特定范围内的值，代码如下所示：
+
+```python
+@click.option('--digit', type=click.IntRange(0, 10))
+```
+
+#### click.argument
+
+argument 与 option 类似，argument 是位置参数 (positional argument) ，argument 支持 option 部分功能
+
+最基础的情况下，使用与 option 类似，一般需要指定参数对应的类型，如果不指定，会是 STRING 类型。代码如下所示：
+
+```python
+@click.command()
+@click.argument('filename')
+def touch(filename):
+    click.echo(filename)
+```
+
+同样，option 也支持一些更高级的用法：
+
+- 支持可变参数，利用`nargs` 可以支持可变的参数，设置`nargs = -1` 表示不限数量的参数，代码如下所示：
+
+```python
+@click.command()
+@click.argument('src', nargs=-1)
+@click.argument('dst', nargs=1)
+def copy(src, dst):
+    for fn in src:
+        click.echo('move %s to folder %s' % (fn, dst))
+```
+
+通过上面的代码可以看到`src` 参数是可以支持多个的，`dst` 只支持一个，运行结果如下所示：
+
+```python
+$ copy foo.txt bar.txt my_folder
+move foo.txt to folder my_folder
+move bar.txt to folder my_folder
+```
+
+- 支持文件类型，代码如下所示：
+
+```python
+@click.argument('input', type=click.File('rb'))
+```
+
+- 支持文件路径类型，代码如下所示：
+
+```python
+@click.argument('f', type=click.Path(exists=True))
+```
+
+- 同样也支持环境变量，代码如下所示：
+
+```python
+@click.argument('files', nargs=-1, type=click.Path())
+```
+
+#### 命令组
+
+可以将命令分组进行管理，在使用中可以使用`@click.group()` 装饰器指定组，此后可以使用组名构建子命令。同时可以设定组内命令的回调，组内的任意子命令执行时，都可以触发回调。使用如下所示：
+
+```python
+@click.group()
+@click.option('--debug/--no-debug', default=False)
+def cli(debug):
+    click.echo('Debug mode is %s' % ('on' if debug else 'off'))
+
+@cli.command()
+def sync():
+    click.echo('Synching')
+```
+
+在上面的代码中可以看到，使用`@click.group()` 装饰器装饰了`cli()` 方法，`cli` 可以理解为组名，后续即可使用`@cli.command()` 代替`@click.command()` 装饰`sync()` 方法，`sync()` 方法就是组内的子命令，而`cli()` 方法即为子命令执行后出发的回调。可以看到执行子命令`sync()` 方法后的现场如下所示：
+
+```python
+$ tool.py --debug sync
+Debug mode is on
+Synching
+```
+
+可以看到上面的执行情况，子命令`sync` 执行时，不仅执行了`sync()` 方法中的代码，还执行了回调方法`cli()` 方法中的代码。
+
+在使用命令组时，还可以在命令组和子命令之间进行参数的传递，此时可以使用`@click.pass_context` 装饰器进行，具体的细节可以查看[官方文档](https://click.palletsprojects.com/en/7.x/commands/) 。
+
+## 从 Flask-script 到 Click
+
+从前面的介绍可以看到，Click 与 Flask-script 的使用极其类似，而且更灵活，更强大。但是直接使用`@click.command()` 看起来似乎是每次执行确定的单个命令，有没有办法实现类似 Flask-script 一样任意选择的命令呢 ？
+
+答案是可以的，但是必须借助于命令组，建立一个命令组，执行的命令都是命令组的子命令，执行时就可以通过参数指定执行的命令了，因此最终替代的 Flask-script 的 Click 代码如下所示：
+
+```python
+# manage.py
+
+@click.group()
+def cli():
+    pass
+
+@cli.command()
+def hello():
+    click.echo('hello')
+
+if __name__ == '__main__':
+    cli()
+```
+
+对于上面的代码，可以直接执行`python manage.py hello` 从而执行`hello()` 方法中的代码
+
+对于 Flask 框架而言，可以使用 Flask 中继承自 `click.group()` 的类 `FlaskGroup` ，使用更便利。通过一番折腾，可以将 Flask-script 的依赖彻底去除了。
