@@ -35,7 +35,7 @@ tags:
 此方法在更新阶段的render之前被触发，用于做一些render之前的准备工作
 
 #### componentDidUpdate
-在更新阶段的render之后触发，与创建阶段的componentDidMount类似，注意，react组件只有初始化的时候会执行创建阶段的方法，而后在每一次更新state或props时，都只会执行更新阶段的方法，因此componentDidMount可能会多次执行
+在更新阶段的render之后触发，与创建阶段的componentDidMount类似，注意，react组件只有初始化的时候会执行创建阶段的方法，而后在每一次更新state或props时，都只会执行更新阶段的方法，因此 componentDidUpdate 可能会多次执行
 
 #### componentWillUnmount
 在组件被卸载时会被调用，一般执行必要的清理工作
