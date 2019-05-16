@@ -1,0 +1,22 @@
+---
+layout: post
+title: 'Flex 布局'
+subtitle:   "Flex"
+date:       2019-05-15 22:52:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - frontend
+---
+
+## 背景介绍
+
+Flex 布局是 2009 年 W3C 提出的一个新的布局方案，可以更好地进行页面布局。到目前为止，Flex 已经被各个浏览器广泛支持了。利用 Flex 可以实现一些之前比较难实现的效果，比如垂直居中。而且 Flex 功能相当强大，使用也十分灵活，开发需要的代码量少得惊人。
+
+## 具体学习
+
+本来预备大篇介绍 Flex 的基础概念，但是已经找到了更好的布局教程，对于需要熟悉 Flex 基础概念，可以移步阅读  [阮一峰的 Flex 布局教程]([http://www.ruanyifeng.com/blog/2015/07/flex-grammar.html](http://www.ruanyifeng.com/blog/2015/07/flex-grammar.html)) ，阮老师的博客深入浅出，相当值得一读。
+
+如果想要自己实践一下 Flex 布局的样式，看到具体的效果，可以参考 [W3School Flex 布局](https://www.w3schools.com/css/css3_flexbox.asp) ，自己动手来一遍，基础概念就都熟悉了。
+
