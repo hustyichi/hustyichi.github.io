@@ -1,0 +1,331 @@
+---
+layout: post
+title: 'ES6 概述'
+subtitle:   "ES6"
+date:       2019-05-26 16:50:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - frontend
+---
+
+## 基础介绍
+
+ES6 是 javascript 新的语法标准，从 2015 发布以来，已经得到浏览器广泛的支持， 具体的支持情况可以参考 [caniuse](https://caniuse.com/#search=es6) 。本文主要介绍 ES6 新的语法特性，具体的内容参考自廖一峰老师的 [ES6 标准入门]([https://search.jd.com/Search?keyword=ES6%E6%A0%87%E5%87%86%E5%85%A5%E9%97%A8%20%E7%AC%AC3%E7%89%88&enc=utf-8&wq=ES6%E6%A0%87%E5%87%86%E5%85%A5%E9%97%A8%20%E7%AC%AC3%E7%89%88](https://search.jd.com/Search?keyword=ES6标准入门 第3版&enc=utf-8&wq=ES6标准入门 第3版)) ，有兴趣的可以去买来支持一下。
+
+## 新语法特性
+
+ES6 新增了比较多的新语法特性，下面列举了其中最实用，使用最广泛的语法特性，对开发效率的提升还是很明显的。
+
+#### let 和 const
+
+在 ES5 中定义变量，一般会使用 var ，但是 var 定义的变量存在两个基本的问题：
+
+1. var 变量存在变量提升的问题，变量的定义会被提升至最前面，导致在定义前使用变量不会报错；
+2. var 变量欠缺块级作用域，变量要么属于全局作用域，要么属于函数作用域，块级作用域的缺失会导致隐藏一些异常的bug；
+
+let 和 const 定义的变量修复了上面的问题，其中 let 与 var 类似，但是修复了上面的两个问题，const 可以用于定义不可变的常量。下面列举说明：
+
+```javascript
+{
+  let a = 10;
+  var b = 1;
+}
+
+a // ReferenceError: a is not defined.
+b // 1
+```
+
+上面的代码中，a 就是具备块级作用域特性，在块外使用会报错，但是 b 则不具备块级作用域，在块外依旧可以使用。
+
+在支持 ES6 的情况下建议使用 let 替代 var，而在不需要改变的情况下，尽量使用 const
+
+#### 变量解析赋值
+
+在 ES6 支持变量解析，可以从数组或对象中解析出数据，赋值给变量。具体如下：
+
+- 数组解析
+
+  使用数组赋值，可以将数组解析为一系列变量，使用如下所示：
+
+  ```javascript
+  let [a, b, c] = [1, 2, 3];
+  a // 1
+  b // 2
+  c // 3
+  ```
+
+  可以看到将数组解析为变量a, b, c，可以方便地获取数组中值
+
+  在解析中支持默认值的使用，使用如下所示：
+
+  ```javascript
+  let [a, b = 2] = [1];
+  a // 1
+  b // 2
+  ```
+
+- 对象解析
+
+  对象也支持解析，可以将对象解析为一系列变量，对象的解析是根据属性解析的，因此变量名需要与属性相同，使用如下所示：
+
+  ```javascript
+  let { foo, bar } = { foo: 'aaa', bar: 'bbb' };
+  foo // "aaa"
+  bar // "bbb"
+  ```
+
+解析构造还支持字符串，数值，布尔值，以及函数参数的解析赋值，有兴趣可以了解一下
+
+#### 模板字符串
+
+很多语言都支持模板字符串，Python 也在 Python 3 中引入了模板字符串，javascript 也不甘落后，ES6 引入了比较便利的模板字符串语法，使用如下所示：
+
+```javascript
+$('#result').append(`
+  There are <b>${basket.count}</b> items
+   in your basket, <em>${basket.onSale}</em>
+  are on sale!
+`);
+```
+
+ES6 的模板字符串使用反引号 ` 包含模板字符串，其中使用符号 $ 包含变量。使用更加便利
+
+#### 函数扩展
+
+在 ES6 中，对原有的函数进行了扩展， 支持了更多的新特性，具体如下：
+
+- 参数默认值
+
+  在 ES5 中，函数不支持默认参数，只能通过 `d = d || 'default'` 的语法进行弥补，在 ES6 中支持了默认值，可以直接使用如下所示的写法了：
+
+  ```javascript
+  function log(d = 'default') {
+    console.log(d);
+  }
+  ```
+
+- rest 参数
+
+  在 ES6 中，支持可变长度的参数调用，引入了 `...变量` 用户获取多余的参数，使用如下所示：
+
+  ```javascript
+  function log(a, ...b) {
+    console.log(a);  // 1
+    console.log(b);  // [2, 3]
+  }
+  log(1, 2, 3);
+  ```
+
+- 箭头函数
+
+  在 ES6 中，引入了一种新的函数定义方式，箭头函数，可以简化函数的定义语法。使用如下：
+
+  ```javascript
+  var sum = (num1, num2) => { return num1 + num2; }
+  // 等同于
+  var sum = function(num1, num2) {
+    return num1 + num2;
+  };
+  ```
+
+#### 数组扩展
+
+在 ES6 中，对原有的数组进行了扩展， 增加了比较多的新方法，同时支持使用扩展运算符 `...` 将数组转换为参数序列，在函数调用时比较方便，具体如下：
+
+```javascript
+var sum = (num1, num2) => { return num1 + num2; }
+sum(...[1,2]) 
+```
+
+在上面的例子中就使用 `...[1,2]` 将数组转换为 `1, 2` 参数序列
+
+#### 对象扩展
+
+在 ES6 中，对象支持比较多的新特性，具体如下：
+
+- 对象属性简写
+
+  在 ES6 中，对于同名的属性可以简写代替，具体如下面的例子：
+
+  ```javascript
+  const foo = 'bar';
+  const baz = {foo}; // {foo: 'bar'}
+  
+  // 等同于
+  const baz = {foo: foo};
+  ```
+
+  即如果属性名与变量名相同，可以简写为单个变量的形式
+
+- 对象解析赋值
+
+  前面介绍过对象支持解析赋值，对于没有没有被分配的属性，可以使用扩展运算符 `...` 进行分配存储。使用类似如下：
+
+  ```javascript
+  let { x, y, ...z } = { x: 1, y: 2, a: 3, b: 4 };
+  x // 1
+  y // 2
+  z // { a: 3, b: 4 }
+  ```
+
+  上面的例子中，由于对象的解析赋值，将对象的属性x, y 赋值给变量x, y，没有被分配的属性会被分配给 z
+
+- 对象解构
+
+  类似与数组，可以将对象通过扩展运算符 `…` 取出所有的属性，转换至新对象中。使用类似如下所示：
+
+  ```javascript
+  let x = { a: 1, b: 2 };
+  let y = { c: 3, d: 4 }
+  let z = { ...x, ...y }; // { a: 1, b: 2, c: 3, d: 4}
+  ```
+
+#### Set 和 Map
+
+Set 和 Map 是其他语言中最常见的数据结构，在 javascript 中一直缺失，在需要使用 Map 时，之前一直是使用对象代替，而 Set 就没有比较好的替代方案。在 ES6 中这两个基础的数据结构都被补上了，给后续使用带来了很多便利
+
+#### Promise
+
+Promise 是 ES6 中提供了便利的异步调用方案，可以将异步调用方法采用同步方式写出来，之前写过 [Promise 异步调用](https://hustyichi.github.io/2018/09/27/promise-in-javascript/) 介绍相关的使用，就不重复介绍了，有兴趣的可以查看之前的文章。
+
+#### 迭代器遍历
+
+ES6 引入了迭代器，为不同的数据提供了统一的数据遍历方式。与 Python 类似，ES6 的迭代器是通过反复调用数据的 `next()` 方法来获取单个数据的，因此，只要数据结构支持 `next()` 接口返回数据，就可以被遍历。
+
+ES6 中提供了新的遍历访问方式，`for... of ` 语法，此语法可以顺序遍历支持迭代器的数据结构。因此对于支持迭代访问的对象，都可以使用 `for...of` 访问。
+
+默认支持迭代访问的常见数据结构为：
+
+- Array 
+- Map
+- Set
+- String
+- 函数的 arguments 对象
+
+因此可以使用如下所示的方式访问数据：
+
+```javascript
+var es6 = new Map();
+es6.set("edition", 6);
+es6.set("committee", "TC39");
+es6.set("standard", "ECMA-262");
+
+for (let [name, value] of es6) {
+  console.log(name + ": " + value);
+}
+// edition: 6
+// committee: TC39
+// standard: ECMA-262
+```
+
+#### Generator 生成器
+
+ES6 提供了类似于 Python 中的生成器，对于 Python 迭代器的使用可以查看之前的 [Python 优雅迭代器](https://hustyichi.github.io/2018/08/14/elegant-iterator-in-python/) ，类似于 Python 中的生成器，在 ES6 的方法中，通过 yield 语法将需要遍历的数据返回，后续可以迭代访问 yield 返回的数据。使用类似如下所示：
+
+```javascript
+function* helloWorldGenerator() {
+  yield 'hello';
+  yield 'world';
+}
+var hw = helloWorldGenerator();
+for (let d of hw){
+  console.log(d);
+}
+// 'hello'
+// 'world'
+```
+
+在上面的代码中，方法 `helloWorldGenerator()` 将需要返回的数据 'hello' , 'world' 通过 yield 语句返回，之后可以迭代访问生成器方法 `helloWorldGenerator()` ，即可获取到相关的数据
+
+#### async 和 await
+
+async 和 await 是 ES6 中引入的异步语法，可以进一步优化异步方法调用的语法，使用更加类似通过的方式调用异步方法。
+
+async 语法用于标识方法中包含异步操作
+
+await 用于表示紧跟其后的语句需要等待结果，函数执行中碰到 await 语句就会先返回，等待异步操作结束才继续执行后续的语句
+
+通过 async 与 await 方法的配合使用，可以将异步调用采用完全类似同步的方法写出来。具体的例子如下所示：
+
+```javascript
+async function getStockPriceByName(name) {
+  const stockPrice = await getStockPrice(symbol);
+  return stockPrice;
+}
+
+getStockPriceByName('goog').then(function (result) {
+  console.log(result);
+});
+```
+
+上面的例子中，方法内部包含异步方法 `getStockPrice()` , 通过 await 语句表示后续的返回值需要等待异步方法`getStockPrice()`执行结束才会执行，这样保证可以得到异步操作的返回值。
+
+在方法的外部使用 async 语句表示此方法`getStockPriceByName()` 中包含异步操作，这样调用者如果需要在获得此方法返回值才执行一些操作，可以使用 Promise 的 then 语法，或者使用 await 等待数据并展示。
+
+#### Class 类
+
+在之前的 javascript 中，为了实现类，一般是定义一个方法对象。类似如下所示：
+
+```javascript
+function Point(x, y) {
+  this.x = x;
+  this.y = y;
+}
+
+Point.prototype.toString = function () {
+  return '(' + this.x + ', ' + this.y + ')';
+};
+
+var p = new Point(1, 2);
+```
+
+这种定义方式十分不清晰，令新手十分茫然，难以理解。在 ES6 中，实现了新的 Class 语法，可以实现类似其他语言的类定义，将上面的代码采用新的 Class 语法写出类似如下所示：
+
+```javascript
+class Point {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+  }
+
+  toString() {
+    return '(' + this.x + ', ' + this.y + ')';
+  }
+}
+
+var p = new Point(1, 2);
+```
+
+类的定义会清晰比较多，更加易于理解。
+
+#### 模块引用
+
+ES6 提供了新的模块引用方案，通过使用 export 和 import 进行模块的引用。在使用中通过 export 指定当前模块对外提供的接口，然后通过 import 引入其他模块提供的接口。
+
+通过 export 提供接口的示例类似如下所示：
+
+```javascript
+// profile.js
+var firstName = 'Michael';
+var lastName = 'Jackson';
+var year = 1958;
+
+export {firstName, lastName, year};
+```
+
+在需要引用当前模块的地方，通过 import 进行引用，使用类似如下所示：
+
+```javascript
+import {firstName, lastName, year} from './profile.js';
+```
+
+## 总结
+
+在上面的介绍中，基本覆盖了 ES6 中提供的实用的语法特性，但是在各个新的语法特性中，都还有更多的细节有待挖掘，如果有兴趣，可以进一步去探索 ES6 中各个语法特性中的细节。整体感觉下来，ES6 将 javascript 语言中一些最基础的痛点都补全了，让 javascript 更像一些完善的开发语言了，推荐大家都用起来吧。
+
+
+
+
+
