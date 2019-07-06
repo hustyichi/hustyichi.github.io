@@ -1,0 +1,182 @@
+---
+layout: post
+title: 'RBAC 权限管理介绍与实现'
+subtitle:   "Introduction and implementation of RBAC authority management"
+date:       2019-07-06 10:42:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+---
+
+## 背景介绍
+
+最近在看到 [Flask Web开发实战](https://book.douban.com/subject/30310340/) 中提到 web 项目中的权限管理 RBAC，看起来比较简单，也比较实用，提供了一种比较合适的权限管理方式。如果在实践中实现一套权限管理策略，也极有可能会参考类似的思想。于是，梳理相关的基础概念，采用 Python 进行了简单的实现。由于 RBAC 一般是用于 web 服务，一般的实现是通过 DB 的设计进行体现，这边只是对 RBAC 思想的阐述，通过 Python 方法进行了模拟，具体的实现见 [Github](https://github.com/hustyichi/simple_rbac) 。
+
+## 具体解释
+
+RBAC  全称是基于角色的权限访问控制（Role-Based Access Control），基础性的介绍可以参考 [百科](https://baike.baidu.com/item/RBAC) ，基础的思想是：通过角色进行权限控制，而用户可以扮演一个或多个角色。通过这种设计让权限管理更加灵活。
+
+RBAC 分为 RBAC0，RBAC1，RBAC2，RBAC3，RBAC0 是最基础的，后面几种是对 RBAC0 的扩展，但是整体思想没有变化，下面就对 RBAC0 进行详细介绍：
+
+![rbac](/img/in-post/rbac/rbac0.jpg)
+
+根据上面的图示可以看到 RBAC0 中最基础的概念包含如下所示：
+
+1. Permission 权限，用户执行操作所需的权限，一般包括只读权限，可写权限等，根据业务不同权限会有所不同；
+2. Role 角色，一般情况下用户会被赋予多种权限，事实上用户会被划分为不同角色，比如未登录用户，登录用户，管理员，超级管理员等；
+3. User 用户，Web 服务中最基础的概念，用户，比较容易理解；
+4. Session 会话，Session 用于存储当前用户信息，表示当前用户；
+
+在通过 RBAC 进行权限管理时，根据业务需求设计需要的权限，然后根据用户中权限需求的差异将用户分为不同的角色，最后将实际的用户赋予特定的角色，用户即获得对应的权限。
+
+## 简单实现
+
+根据上面的介绍的 RBAC 的概念，使用 Python 进行了简单实现，在业务中一般需要将相关思想实现在 DB 中，使用者自身业务情况自行实现。下面对此简单实现进行介绍：
+
+#### Permission 权限
+
+在实现中，定义需要三种基础的权限，通过常量进行保存：
+
+```python
+READ_PERMISSION = 'READ'
+WRITE_PERMISSION = 'WRITE'
+EXEC_PERMISSION = 'EXECUTE'
+```
+
+进行权限管理的原因是因为部分操作只允许有权限的用于执行，因此提供了一个装饰器用于限制操作的权限。提供的方法如下所示：
+
+```python
+def permission_required(permission):
+    def decorator(func):
+        @wraps(func)
+        def decorator_function(*args, **kwargs):
+            user = get_logined_user()        # 获取当前用户
+            if not user or not user.can(permission):  # 判断用户是否存在对应的权限
+                raise Exception('无权限')
+
+            return func(*args, **kwargs)
+        return decorator_function
+    return decorator
+```
+
+上面提供的装饰器很简单，检查当前用户是否具备此权限，如果有权限才能正确执行，否则直接报错。
+
+而需要进行权限限制的方法可以直接使用此装饰器进行权限控制，代码如下所示：
+
+```python
+@permission_required(READ_PERMISSION)
+def read_file():
+    print('read successfully')
+
+
+@permission_required(WRITE_PERMISSION)
+def write_file():
+    print('write successfully'）
+          
+@permission_required(RBAC.EXEC_PERMISSION)
+def exec_file():
+    print('execute successfully')
+```
+
+#### Role 角色
+
+根据需要在应用中将用户划分为三种角色，角色对应的权限是固定不变的，因此使用常量进行保存。实践中如果需要角色对应的权限可变，需要维护角色与权限映关系。代码如下所示：
+
+```python
+# Role 角色
+VISITOR_TYPE = 'VISITOR'
+OPERATOR_TYPE = 'OPERATOR'
+MANAGER_TYPE = 'MANAGER'
+
+# 定义角色对应的权限
+PERMISSION_MAP = {
+    VISITOR_TYPE: {READ_PERMISSION},
+    OPERATOR_TYPE: {READ_PERMISSION, WRITE_PERMISSION},
+    MANAGER_TYPE: {READ_PERMISSION, WRITE_PERMISSION, EXEC_PERMISSION},
+}
+```
+
+在角色类实现中，为了比较方便，实现了一个接口 `has()` 用于判断角色是否存在对应的权限，代码如下所示：
+
+```python
+# 基础的角色类，提供接口 has() 用于判断角色是否存在特定的权限
+class Role:
+    @abstractmethod
+    def _role_type(self):
+        pass
+
+    def has(self, permission):
+        return permission in PERMISSION_MAP[self._role_type()]
+      
+# 定义角色 VisitorRole，拥有的权限为 [READ_PERMISSION]
+class VisitorRole(Role):
+    def _role_type(self):
+        return VISITOR_TYPE
+
+# 定义角色 OperatorRole，拥有的权限为 [READ_PERMISSION, WRITE_PERMISSION]
+class OperatorRole(Role):
+    def _role_type(self):
+        return OPERATOR_TYPE
+
+# 定义角色 ManagerRole，拥有的权限为 [READ_PERMISSION, WRITE_PERMISSION, EXEC_PERMISSION]
+class ManagerRole(Role):
+    def _role_type(self):
+        return MANAGER_TYPE
+```
+
+#### User 用户
+
+定义具体的用户，用户可以被指定特定的角色，为了方便，提供了 `can()` 方法用于判断用户是否存在特定权限。具体的代码如下所示：
+
+```python
+class User:
+    def __init__(self, name, role=None):
+        self._name = name
+        self._role = role
+
+    def set_role(self, role):
+        self._role = role
+
+    def can(self, permission):
+        return self._role and self._role.has(permission)
+```
+
+#### Session 会话
+
+Session 主要用于判断当前用户，对于 Web 服务来说，这个机制一般情况是会存在的。这边通过两个接口提供了模拟了相关功能。代码如下所示：
+
+```python
+logined_user = None
+
+# 模拟 web 服务中的登录功能
+def login(user):
+    global logined_user
+    logined_user = user
+
+# 模拟 Web 服务中获取当前用户的功能
+def get_logined_user():
+    return logined_user
+```
+
+将上面的模块组织起来，即可实现简单的权限管理的功能，用户在使用中，可以直接执行对应的操作，如果具备对应的权限，则可以正确执行，否则会执行失败，测试代码如下：
+
+```python
+# 创建用户，指定为 OperatorRole，具备 [READ_PERMISSION, WRITE_PERMISSION] 权限
+operator_role = OperatorRole()
+current_user = User('opt', operator_role)
+
+# 登录用户
+login(current_user)
+
+# 写入文件，需要 WRITE_PERMISSION, 用户存在此权限
+write_file()
+
+# 执行文件，需要 EXEC_PERMISSION, 用户不存在此权限，报错
+exec_file()
+```
+
+## 总结
+
+通过基础的 RBAC 权限管理，可以比较简单地实现固定权限的管理，实际业务中可能根据需求的不同而进行额外的拓展，但是思路都是类似的。文章的图示来自于 [SO JSON 在线](https://www.sojson.com/blog/141.html) ，表示感谢。
