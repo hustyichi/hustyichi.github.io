@@ -1,0 +1,96 @@
+---
+layout: post
+title: 'Pandas 数据分析'
+subtitle:   "Data analysis with pandas"
+date:       2019-08-25 14:11:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+---
+
+## 基础背景
+
+最近开始折腾第三方金融 API 接口，结果返回的数据都是 DataFrame 结构，于是入门了 Python 的数据处理库 Pandas，整理了相关的基础知识，方便后续查询。
+
+在 Python 中最便利的数据处理库是 Pandas，而 Pandas 是建立在基础库 NumPy 的基础上。此文章也会涉及到部分 NumPy 的介绍。希望这篇文章帮助大家快速了解这些基础库。
+
+## NumPy
+
+NumPy 是一个 Python 拓展库，支持大量的维度数组与矩阵运算，在 NumPy 中最重要的就是其基础数据结构 NdArray，用于多维数组的存储。
+
+#### NdArray
+
+NdArray 是多维的同类型数据的集合。NdArray 类似与 C 语言中的数组，由于数据类型相同，单个数据占用的大小是固定的，数据的访问是数据的指针地址访问，因此访问速度比较快。基础的使用类似如下所示：
+
+```python
+import numpy as np
+# 构建一维数组 [0, 1, 2... 11]
+a = np.arange(12)
+# 将一维数组转换为二维数组 [[0, 1, 2], [3, 4, 5], [6, 7, 8], [9, 10, 11]]
+b = a.reshap(4, 3)
+```
+
+对于一般数组中存在的基础操作，NdArray 都是支持的。比如切片，索引，迭代访问，以及基于索引的访问。
+
+同时 NdArray 也支持额外的数学操作，比如矩阵的加减乘除，以及多维数组的统计方法，比如计算中值，算术平均值，方差，标准差等。使用类似如下所示：
+
+```python
+import numpy as np 
+ 
+np.std([1,2,3,4]) # 计算标准差
+```
+
+一般情况下，直接将 NdArray 理解为多维数组即可。而后续进行数据处理时，大部分情况下不需要直接接触 NdArray，如果真的需要进行 NdArray 的操作，查询 [官方文档](https://www.numpy.org/devdocs/user/quickstart.html) 即可。入门的中文教程也可以参考 [NumPy 中文教程](https://www.runoob.com/numpy/numpy-tutorial.html) 。
+
+## Pandas
+
+Pandas 是一个高性能的数据分析工具。提供了遍历的数据分析接口与数据结构。
+
+Pandas 中最基础和常用的是两个数据结构：Series，DataFrame。Series 被译为标签数组，主要用于存储一维数据，DataFrame 也被叫做数据帧，主要用于存储二维数据。下面分别对这两个基础数据结构进行介绍。
+
+#### Series
+
+Series 是一维标签数组，行为类似于数组，同样也类似于字典。可以通过下标访问数据，也可以通过索引进行访问。使用类似如下所示：
+
+```python
+import pandas as pd
+# 根据数组生成 Series
+s = pd.Series([1, 2, 3, 4, 5], index=['a', 'b', 'c', 'd', 'e'])
+print(s[1])    # 2
+print(s['b'])  # 2
+```
+
+在上面的例子中，利用数组 `[1, 2, 3, 4, 5]` 生成 Series，指定的索引为 `['a', 'b', 'c', 'd', 'e']` ，此时Series 可以具备数组的属性，因此可以通过 `s[1]` 访问第二个元素 `2` ，也具备字典的特定，索引作为作为字典的 key 存在，此时 Series 类似 `{'a': 1, 'b': 2, 'c': 3, 'd': 4, 'e': 5}` ,	因此可以通过 `s['b']` 访问元素 `2` 。
+
+#### DataFrame
+
+DataFrame 是一个二维标签数据结构，在 Series 的基础上增加了列索引。在实际使用时，可以通过行索引获取到特定行，也可以通过列索引获取特定列的数据。使用类似如下所示：
+
+```python
+import pandas as pd
+# 基础数据，为 key 为字符串，value 为 Series 对象的字典
+d = {'one': pd.Series([1,2,3], index=['a', 'b', 'c']), 
+     'two': pd.Series([2,4,6], index=['a', 'b', 'c'])}
+# 根据字典生成 DataFrame 对象
+# df 数据类似如下所示
+#   one two
+# a  1   2
+# b  2   4
+# c  3   6
+df = pd.DataFrame(d)
+# 获取特定列, 得到数据为 Series 对象，类似 pd.Series([1,2,3], index=['a', 'b', 'c']
+df['one'] 
+# 通过行标签 'a' 获取第一行的数据，得到 Series 对象，类似 pd.Series([1, 2], index=['one', 'two'])
+df.loc['a', :]
+```
+
+可以看到，在上面的使用中，通过值为 Series 的字典 `{'one': pd.Series([1,2,3], index=['a', 'b', 'c']), 'two': pd.Series([2,4,6], index=['a', 'b', 'c'])}` 构造出 DataFrame 对象，后续可以通过行索引或列索引分别访问到特定的数据，得到的数据均为 Series 对象。
+
+在实际使用中，使用 Pandas 的场景下会大量使用 DataFrame 数据结构，在实践中，可能会需要获取特定数据的平均值，标准差等，以及矩阵操作等，在 Pandas 中都可以很容易做到。具体的实践可以参考[官方文档](https://pandas.pydata.org/pandas-docs/stable/) , Pandas 中文提供了[中文文档](https://www.pypandas.cn/docs/getting_started/) ，编程字典也提供了一个不错的 [入门教程](http://codingdict.com/article/8270) ，可以互为对照
+
+## 总结
+
+Python 提供的数据分析库 Pandas 提供优秀的数据结构 Series，DataFrame，以及基于此数据结构的大量的使用数据操作，在实践中，可以根据需要参考文档使用。后续根据实践情况再整理具体的使用经验。
+
