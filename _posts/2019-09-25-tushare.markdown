@@ -1,0 +1,157 @@
+---
+layout: post
+title: '基于 Tushare 进行数据分析'
+subtitle:   "Data analysis base on tushare"
+date:       2019-09-25 21:57:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+---
+
+## 背景介绍
+
+最近对金融与投资产生了一些兴趣，了解了相关知识。在基金投资中，比较推荐的做法是进行定投。那么基金定投是否靠谱呢？在基金定投中，优化的策略是高抛低吸，这种策略有是否有效呢？
+
+一个最简单的方法就是找历史数据来进行验证，作为一个程序猿，验证一下那还不是几行代码的事情。一番搜索之后，找到了数据源的提供方，[Tushare](https://tushare.pro/) ，一个使用比较广泛的开源的金融数据 API，而且其返回的数据是 DataFrame 格式的，使用 Python 分析特别方便。
+
+在本文中，选择了 A 股市场上赫赫有名的大盘指数沪深 300 进行定投，为了与实际情况更接近，选择了跟踪沪深 300 比较不错一只公募指数基金兴全沪深 300 的数据进行验证。
+
+## 策略验证
+
+#### 基本思路
+
+定投是否靠谱的一个重要判断标准是回报率，最基础的定投是每个固定的时间定投固定的金额，而优化的策略是在市场低点加大定投，在市场高点减少定投。我们可以使用同样的数据去验证这种优化策略是否奏效。另一种被认为比较糟的策略是追涨杀跌，即与高抛低吸相反，在低点减少定投，在高点加大定投。我们也可以比较验证。
+
+#### 实现流程
+
+1. 获取数据，实现流程的第一步就是获取到基金的历史数据，利用 Tushare 提供的接口可以比较方便地实现；
+
+   ```python
+   import tushare as ts
+   
+   def get_fund_data():
+       token = 'xxx'                               # Tushare 的 token，注册之后可见
+       pro = ts.pro_api(token)
+       return pro.fund_nav(ts_code='163407.SZ')    # 获取基金的数据
+   ```
+
+2. 实现基础策略，在实际实现中，采用的是按月定投，选择了每个月的第一天进行定投，定投金额是固定的；
+
+   在具体的实现中，实现了 `get_fund_trading_day()` 从原始的数据中获取必要的数据，并按月采用数据，具体代码如下：
+
+   ```python
+   def get_fund_trading_day(fund_data):
+       # 获取原始数据中必要的数据，包括时间 end_date 与累计净值 accum_nav
+       fund_data = fund_data.loc[:, ['accum_nav', 'end_date']]
+       # 将时间转化为 datetime，并按照时间排序数据
+       fund_data['date'] = fund_data['end_date'].apply(lambda x: datetime.strptime(x, '%Y%m%d'))
+       fund_data = fund_data.set_index('date').sort_index()
+   
+       # 采样每个月的第一个交易日的数据
+       return fund_data.resample('M', kind='date').first()
+   ```
+
+   接下来就是实现定投的交易策略，每个月投入固定的金额，按照最新月份的累计净值计算回报率，具体代码如下所示：
+
+   ```python
+   def get_fund_accum_return(fund_data):
+       trading_day = get_fund_trading_day(fund_data)
+   
+       # 投入金额，每期固定投入 10000 元
+       trading_day['invest'] = 10000
+       trading_day['acc_invest'] = trading_day['invest'].cumsum()
+   
+       # 获得的基金份额
+       trading_day['share'] = trading_day['invest'] / trading_day['accum_nav']
+       trading_day['acc_share'] = trading_day['share'].cumsum()
+   
+       # 计算当期的基金的实际价值与回报率
+       trading_day['acc_value'] = trading_day['acc_share'] * trading_day['accum_nav']
+       trading_day['acc_increment'] = trading_day['acc_value'] / trading_day['acc_invest']
+       return trading_day
+   ```
+
+3. 实现优化策略，定投中一个简单的优化策略就是高抛低吸，这边为了简化，主要模拟是低吸的策略，简单验证下在亏损情况下加大定投，在盈利情况下减少定投对最终回报率的影响。实际情况下要考虑投入的年限制定不同的高抛低吸策略，这边为了简化也不考虑投入年限了。简化为一个与普通定投下回报率相关的追加定投策略。每期额外追加的定投金额为 `(1 - trading_day['acc_increment']) * 10000` 。
+
+   额外追加的投资可为正或负，额外追加投资为负即表示本期减少投资。比如当前回报率为 0.9，即本金亏损 10%，那么额外追加投资为 1000，当期实际投资为 11000，而当前回报率为 1.1，即盈利 10%，那么额外追加投资为 -1000，当期实际投资为 9000。从而达到低吸的效果。实际代码如下：
+
+   ```python
+   def get_improved_fund_accum_return(fund_data):
+       trading_day = get_fund_trading_day(fund_data)
+   
+       # 固定定投投入金额
+       trading_day['base_invest'] = 10000
+       trading_day['acc_base_invest'] = trading_day['base_invest'].cumsum()
+   
+       # 固定定投获得基金份额
+       trading_day['base_share'] = trading_day['base_invest'] / trading_day['accum_nav']
+       trading_day['acc_base_share'] = trading_day['base_share'].cumsum()
+   
+       # 固定定投获取的回报
+       trading_day['acc_base_value'] = trading_day['acc_base_share'] * trading_day['accum_nav']
+       trading_day['acc_base_increment'] = trading_day['acc_base_value'] / trading_day['acc_base_invest']
+   
+       # 追加投资投入金额
+       trading_day['add_invest'] = (1 - trading_day['acc_base_increment']) * 10000
+       trading_day['acc_add_invest'] = trading_day['add_invest'].cumsum()
+   
+       # 实际投资额
+       trading_day['invest'] = trading_day['base_invest'] + trading_day['add_invest']
+       trading_day['acc_invest'] = trading_day['invest'].cumsum()
+   
+       # 实际获得的基金份额
+       trading_day['share'] = trading_day['invest'] / trading_day['accum_nav']
+       trading_day['acc_share'] = trading_day['share'].cumsum()
+   
+       # 实际投资获得的回报
+       trading_day['acc_value'] = trading_day['acc_share'] * trading_day['accum_nav']
+       trading_day['acc_increment'] = trading_day['acc_value'] / trading_day['acc_invest']
+   
+       return trading_day
+   ```
+
+4. 作为对比，可以实现一个追涨杀跌的策略，可以实现一个在盈利多时追加投资，盈利少时减少投资的策略。事实上，一个简单实现是每期追加一个金额为 `(trading_day['acc_increment'] - 1) * 10000` 的投入。代码与上面的代码基本类似，只是追加投资的金额按照当前策略修改即可。
+
+#### 结果展示
+
+按照上面的两种策略实现之后，采用 matplotlib 提供的数据可视化展示最终得到的回报率曲线。可以实现一个简单的数据曲线对比方法，代码如下所示：
+
+```python
+from pylab import mpl
+import matplotlib.pyplot as plt
+
+
+def show_versus_data(title1, title2, data1, data2):
+    # 设置中文字体，如果发现不能正确显式中文，改成一个本地存在的字体即可
+    mpl.rcParams['font.family'] = ['Songti SC']
+    fig = plt.figure()
+    fig.suptitle('回报走势对比', fontsize=18)
+
+    basic_ax = fig.add_subplot(121)
+    basic_y_data = data1['acc_increment']
+    basic_ax.plot(basic_y_data, color='#1f77b4')
+    basic_ax.set_title(title1)
+
+    versus_ax = fig.add_subplot(122)
+    versus_y_data = data2['acc_increment']
+    versus_ax.plot(versus_y_data, color='#ff7f0e')
+    versus_ax.set_title(title2)
+
+    plt.show()
+```
+
+按照上面的展示，最终得到的普通定投与高抛低吸策略的回报率对比图：
+
+![better](/img/in-post/tushare/better.png)
+
+同样也能得到普通定投与追涨杀跌的对比回报率图：
+
+![worse](/img/in-post/tushare/worse.png)
+
+## 简单总结
+
+上面介绍的流程是使用 Tushare 提供的基金数据，利用 Pandas 进行数据处理，利用 matplotlib 进行了简单的数据可视化。借助这些库的帮助，在 Python 中进行数据分析变得相当容易。
+
+但是上面的介绍的优化策略依旧是比较基础的，在实际中可能会使用更加复杂的优化策略，但是即使如此简单的策略，也可以看到最终会带来明显的变化。有兴趣的同学们，利用这些数据，可以充分发挥创造力，验证更加优秀的策略吧。
