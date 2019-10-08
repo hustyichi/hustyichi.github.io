@@ -54,6 +54,7 @@ p.prepare(...)
 
 ```python
 # class Request
+
 def prepare(self):
     p = PreparedRequest()
     p.prepare(
@@ -77,6 +78,7 @@ def prepare(self):
 
 ```python
 # class PrepareRequest
+
 def prepare(self,
             method=None, url=None, headers=None, files=None, data=None,
             params=None, auth=None, cookies=None, hooks=None, json=None):
@@ -94,6 +96,7 @@ def prepare(self,
 
 ```python
 # class PrepareRequest
+
 def prepare_method(self, method):
     self.method = method
     if self.method is not None:
@@ -133,19 +136,24 @@ def prepare_method(self, method):
 
 ```python
 # class Session
+
 def prepare_request(self, request):
     # 从 Request 对象中获取 cookies
+    
     cookies = request.cookies or {}
 
     # 在 cookies 类型不是 CookieJar 时进行类型转换
+    
     if not isinstance(cookies, cookielib.CookieJar):
         cookies = cookiejar_from_dict(cookies)
 
     # 合并本次请求 cookies 和 Session 中的 cookies
+    
     merged_cookies = merge_cookies(
         merge_cookies(RequestsCookieJar(), self.cookies), cookies)
 
     # 构造实际的网络请求参数
+    
     p = PreparedRequest()
     p.prepare(
         method=request.method.upper(),
@@ -170,17 +178,21 @@ def prepare_request(self, request):
 
 ```python
 # class Session
+
 def send(self, request, **kwargs):
     # 发起实际的网络请求
+    
     adapter = self.get_adapter(url=request.url)
     r = adapter.send(request, **kwargs)
 
     # 返回值的历史中存在 cookie，保持至 Session.cookies 中
+    
     if r.history:
         for resp in r.history:
             extract_cookies_to_jar(self.cookies, resp.request, resp.raw)
 
     # 当前请求的 cookies 保持至 Session.cookies 中
+    
     extract_cookies_to_jar(self.cookies, request, r.raw)
 
     return r
@@ -198,15 +210,19 @@ def send(self, request, **kwargs):
 
 ```python
 # class HTTPAdapter
+
 def send(self, request, stream=False, timeout=None, verify=True, cert=None, proxies=None):
   	# 获取网络连接
+    
     conn = self.get_connection(request.url, proxies)
 
     # 判断是否是块网络请求
+    
     chunked = not (request.body is None or 'Content-Length' in request.headers)
 
     if not chunked:
         # 非块请求直接调用 url_open() 进行网络请求
+        
         resp = conn.urlopen(
             method=request.method,
             url=url,
@@ -221,6 +237,7 @@ def send(self, request, stream=False, timeout=None, verify=True, cert=None, prox
         )
     else:
       	# 块请求需要构造数据，按照字节发送数据
+        
         low_conn = conn._get_conn(timeout=DEFAULT_POOL_TIMEOUT)
         low_conn.putrequest(request.method, url, skip_accept_encoding=True)
 
@@ -245,6 +262,7 @@ def send(self, request, stream=False, timeout=None, verify=True, cert=None, prox
         )
 
     # 根据网络请求 PrepareRequest 对象和网络请求返回值构造标准返回对象 Response
+    
     return self.build_response(request, resp)
 ```
 
@@ -258,30 +276,38 @@ def send(self, request, stream=False, timeout=None, verify=True, cert=None, prox
 
 ```python
 # class HTTPAdapter
+
 # 根据请求对象 PrepareRequest 和 urllib3 的返回值构造出 Response
+
 def build_response(self, req, resp):
     response = Response()
 
     # 从 urllib3 的返回值中获取网络状态码
+    
     response.status_code = getattr(resp, 'status', None)
     # 从 urllib3 中获取 headers 信息
+    
     response.headers = CaseInsensitiveDict(getattr(resp, 'headers', {}))
     response.encoding = get_encoding_from_headers(response.headers)
     
     # 存储 urllib3 的原始返回值 resp
+    
     response.raw = resp
     response.reason = response.raw.reason
 
     # 存储网络请求的 url
+    
     if isinstance(req.url, bytes):
         response.url = req.url.decode('utf-8')
     else:
         response.url = req.url
 
     # 存储 cookie 至 Response 中
+    
     extract_cookies_to_jar(response.cookies, req, resp)
 
     # 将之前的请求信息存储至 Response 中
+    
     response.request = req
     response.connection = self
 
