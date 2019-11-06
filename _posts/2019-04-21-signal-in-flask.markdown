@@ -19,17 +19,19 @@ flask 从 0.6 开始支持信号机制，具体的功能实现是依赖 [blinker
 在 blinker 中，信号机制的使用十分简单，通过 `Signal.connect()`  注册信号处理方法， 即增加观察者，之后可以通过 `Signal.send()` 发出信号，此时所有的信号处理方法会被依次触发。具体的使用如下所示：
 
 ```python
-
 # 生成信号
+
 ready = signal('ready')
 
 # 注册信号
+
 def subscriber(sender):
     print("Got a signal sent by %r" % sender)
 
 ready.connect(subscriber)
 
 # 发出信号
+
 ready.send('sender A')
 ```
 
@@ -42,12 +44,17 @@ blinker 中代码的实现也十分简单，对其主要代码简化后如下所
 ```python
 class Signal(object):
     def __init__(self, doc=None):
-        self.receivers = {}                  # 建立 receiver 的 id 与 receiver 的映射
-        self._by_sender = defaultdict(set)   # 保存 sender_id 与 receiver 对应 id 列表的映射
+        # 建立 receiver 的 id 与 receiver 的映射
+        
+        self.receivers = {}
+        # 保存 sender_id 与 receiver 对应 id 列表的映射
+        
+        self._by_sender = defaultdict(set)   
 
     # 注册信号触发的方法，可以用 sender 进行过滤
     # 如果指定了 sender, 则只会在此信号触发并传递与 sender 等同的参数时响应
     # 如果不指定 sender, 那么会在此信号触发传递任意参数都会响应
+    
     def connect(self, receiver, sender=ANY, weak=True):
         receiver_id = hashable_identity(receiver)
 
@@ -55,31 +62,42 @@ class Signal(object):
             sender_id = ANY_ID
         else:
             sender_id = hashable_identity(sender)
-
-        self.receivers.setdefault(receiver_id, receiver) #存储 receiver_id 与 receiver 映射
-        self._by_sender[sender_id].add(receiver_id) # 存储 sender_id 与 receiver_id 列表映射
+        #存储 receiver_id 与 receiver 映射
+        
+        self.receivers.setdefault(receiver_id, receiver) 
+        # 存储 sender_id 与 receiver_id 列表映射
+        
+        self._by_sender[sender_id].add(receiver_id) 
         return receiver
 
     # 触发信号注册的方法
+    
     def send(self, *sender, **kwargs):
         if not self.receivers:
             return []
 
-        return [(receiver, receiver(sender, **kwargs)) # 依次调用参数 sender 对应注册的方法
+         # 依次调用参数 sender 对应注册的方法
+        
+        return [(receiver, receiver(sender, **kwargs))
                 for receiver in self.receivers_for(sender)]
 
     # 获取 sender 对应的注册的方法
+    
     def receivers_for(self, sender):
         if self.receivers:
             sender_id = hashable_identity(sender)
             if sender_id in self._by_sender:
+                 # 获取 sender_id 或任意参数对应注册的方法
+                
                 ids = (self._by_sender[ANY_ID] |
-                       self._by_sender[sender_id]) # 获取 sender_id 或任意参数对应注册的方法
+                       self._by_sender[sender_id])
             else:
                 ids = self._by_sender[ANY_ID].copy()
 
             for receiver_id in ids:
-                receiver = self.receivers.get(receiver_id) # 获取 receiver_id 对应的方法
+                # 获取 receiver_id 对应的方法
+                
+                receiver = self.receivers.get(receiver_id) 
                 yield receiver
 
 ```
