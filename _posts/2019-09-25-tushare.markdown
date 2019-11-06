@@ -32,9 +32,13 @@ tags:
    import tushare as ts
    
    def get_fund_data():
-       token = 'xxx'                               # Tushare 的 token，注册之后可见
+       # Tushare 的 token，注册之后可见
+       
+       token = 'xxx'                               
        pro = ts.pro_api(token)
-       return pro.fund_nav(ts_code='163407.SZ')    # 获取基金的数据
+       # 获取基金的数据
+       
+       return pro.fund_nav(ts_code='163407.SZ')    
    ```
 
 2. 实现基础策略，在实际实现中，采用的是按月定投，选择了每个月的第一天进行定投，定投金额是固定的；
@@ -44,12 +48,15 @@ tags:
    ```python
    def get_fund_trading_day(fund_data):
        # 获取原始数据中必要的数据，包括时间 end_date 与累计净值 accum_nav
+       
        fund_data = fund_data.loc[:, ['accum_nav', 'end_date']]
        # 将时间转化为 datetime，并按照时间排序数据
+       
        fund_data['date'] = fund_data['end_date'].apply(lambda x: datetime.strptime(x, '%Y%m%d'))
        fund_data = fund_data.set_index('date').sort_index()
    
        # 采样每个月的第一个交易日的数据
+       
        return fund_data.resample('M', kind='date').first()
    ```
 
@@ -60,14 +67,17 @@ tags:
        trading_day = get_fund_trading_day(fund_data)
    
        # 投入金额，每期固定投入 10000 元
+       
        trading_day['invest'] = 10000
        trading_day['acc_invest'] = trading_day['invest'].cumsum()
    
        # 获得的基金份额
+       
        trading_day['share'] = trading_day['invest'] / trading_day['accum_nav']
        trading_day['acc_share'] = trading_day['share'].cumsum()
    
        # 计算当期的基金的实际价值与回报率
+       
        trading_day['acc_value'] = trading_day['acc_share'] * trading_day['accum_nav']
        trading_day['acc_increment'] = trading_day['acc_value'] / trading_day['acc_invest']
        return trading_day
@@ -82,30 +92,37 @@ tags:
        trading_day = get_fund_trading_day(fund_data)
    
        # 固定定投投入金额
+       
        trading_day['base_invest'] = 10000
        trading_day['acc_base_invest'] = trading_day['base_invest'].cumsum()
    
        # 固定定投获得基金份额
+       
        trading_day['base_share'] = trading_day['base_invest'] / trading_day['accum_nav']
        trading_day['acc_base_share'] = trading_day['base_share'].cumsum()
    
        # 固定定投获取的回报
+       
        trading_day['acc_base_value'] = trading_day['acc_base_share'] * trading_day['accum_nav']
        trading_day['acc_base_increment'] = trading_day['acc_base_value'] / trading_day['acc_base_invest']
    
        # 追加投资投入金额
+       
        trading_day['add_invest'] = (1 - trading_day['acc_base_increment']) * 10000
        trading_day['acc_add_invest'] = trading_day['add_invest'].cumsum()
    
        # 实际投资额
+       
        trading_day['invest'] = trading_day['base_invest'] + trading_day['add_invest']
        trading_day['acc_invest'] = trading_day['invest'].cumsum()
    
        # 实际获得的基金份额
+       
        trading_day['share'] = trading_day['invest'] / trading_day['accum_nav']
        trading_day['acc_share'] = trading_day['share'].cumsum()
    
        # 实际投资获得的回报
+       
        trading_day['acc_value'] = trading_day['acc_share'] * trading_day['accum_nav']
        trading_day['acc_increment'] = trading_day['acc_value'] / trading_day['acc_invest']
    
@@ -125,6 +142,7 @@ import matplotlib.pyplot as plt
 
 def show_versus_data(title1, title2, data1, data2):
     # 设置中文字体，如果发现不能正确显式中文，改成一个本地存在的字体即可
+    
     mpl.rcParams['font.family'] = ['Songti SC']
     fig = plt.figure()
     fig.suptitle('回报走势对比', fontsize=18)
