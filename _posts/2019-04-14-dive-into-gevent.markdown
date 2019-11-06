@@ -166,9 +166,11 @@ def patch(self):
     monkey.patch_all()
 
     # monkey patch sendfile to make it none blocking
+    
     patch_sendfile()
 
     # patch sockets
+    
     sockets = []
     for s in self.sockets:
         sockets.append(socket.socket(s.FAMILY, socket.SOCK_STREAM, fileno=s.sock.fileno()))
