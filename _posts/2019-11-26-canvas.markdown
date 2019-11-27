@@ -1,0 +1,266 @@
+---
+layout: post
+title: 'Canvas 基础应用'
+subtitle:   "Introduction to canvas"
+date:       2019-11-26 21:49:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - frontend
+---
+
+## 基础介绍
+
+最近开始接触 Canvas， 看到不少使用 Canvas 实现的酷炫动画，包括 [butterfly](https://www.html5tricks.com/demo/html5-canvas-butterfly/index.html) ，[3d-planet](https://www.html5tricks.com/demo/html5-canvas-3d-planet/index.html) ，以及 [动态网布](http://www.webhek.com/post/demo-tear-able-cloth.html) ，看起来功能十分强大，而且交互性也十分不错，看起来可以实现强大的前端功能。刚好最近有一个圣诞帽的需求，于是阅读了 [基础教程](https://developer.mozilla.org/zh-CN/docs/Web/API/Canvas_API/Tutorial/Basic_usage) 之后进行了简单实践。
+
+## Canvas 基础入门
+
+Canvas 是 HTML5 中引入的一个新元素，直译为画布，实际中也扮演着画布的角色，Canvas 会占据一块区域，之后可以在这块区域上利用 javascript 绘制图形。绘制的图形包括：线段，矩形，圆弧，甚至可以绘制图像，利用这些可以组合出复杂的功能。
+
+###### 基础 demo
+
+在开始介绍复杂的功能之前，我们先介绍一个最基础的 demo。
+
+1. 使用 Canvas 首先需要在 html 中定义一个 Canvas 元素，指定占据的区域。代码如下所示：
+
+   ```html
+   <canvas id="tutorial" width="150" height="150"></canvas>
+   ```
+
+   Canvas 需要指定明确指定画布的大小，绘制在画布之外的不会展示。指定 Canvas id 是为了方便后续获取 DOM 元素。
+
+2. 其次需要在 javascript 中获取 Canvas 元素并在上面绘制所需的图形，代码如下所示：
+
+   ```javascript
+   var canvas = document.getElementById('tutorial');
+   var ctx = canvas.getContext('2d');
+   ctx.fillRect (10, 10, 50, 50);
+   ```
+
+   在上面的代码中可以看到首先获取到此 Canvas 的 DOM 元素，之后通过 `getContext('2d')` 获取到 Canvas 的绘制上下文，之后所有的操作都是在此绘制上下文上执行。在上面的例子中，我们利用 `fillRect()` 接口绘制了一个填充矩形。
+
+###### 栅格坐标
+
+![canvas 栅格](/img/in-post/canvas/grid.png)
+
+可以看到 Canvas 中坐标从左上角开始，横坐标是 x 轴，纵坐标是 y 轴，我们绘制一个矩形区域时，最终呈现出来的类似上面的蓝色矩形区域所示。
+
+###### 基础图形
+
+1. 绘制矩形
+
+   ```javascript
+   fillRect(x, y, width, height)
+   ```
+
+   利用 `fillRect()` 接口需要指定起始 x, y 坐标以及矩形的宽度和高度即可绘制出矩形。
+
+2. 绘制路径
+
+   绘制路径操作用于绘制相连的线段，最终得到一个闭合的图形，并展现为连接的线段或填充的图像。由于涉及到的接口更多一些，通过一个简单的 demo 进行介绍：
+
+   ```javascript
+   ctx.beginPath();
+   ctx.moveTo(75, 50);
+   ctx.lineTo(100, 75);
+   ctx.lineTo(100, 25);
+   ctx.closePath();
+   ctx.stroke();
+   ```
+
+   在绘制路径时，我们首先通过 `beginPath()` 接口标记开始绘制路径，之后通过通过 `moveTo()` 移动画笔到特定的起始坐标，之后可以通过 `lineTo()` 指定绘制到下一个坐标，多次绘制之后可以调用 `closePath()` 闭合整个图像，之后调用 `stroke()` 执行真正的绘制，此时会绘制出图形的轮廓。当然也可以调用 `fill()` 接口填充整个图形。
+
+   在绘制图形中，除了通过 `lineTo()` 绘制直线时，也可以通过 `arc()` 接口绘制圆弧形状，或者通过 `quadraticCurveTo()` 绘制贝塞尔曲线。
+
+   在绘制中也可以通过 Canvas 的上下文中的 `fillStyle` 和 `strokeStyle` 属性设置绘制和填充的样式，包括颜色和透明度等。
+
+###### 绘制图像
+
+我们也可以将单个图像绘制在画布上，使用的接口如下所示：
+
+```javascript
+drawImage(image, x, y, width, height)
+```
+
+使用此接口可以将单个 Image 元素绘制在 Canvas 上，简单的使用 demo 如下所示：
+
+```javascript
+var img = new Image();                   // 创建img元素
+img.onload = function(){
+  var canvas = document.getElementById('tutorial');
+	var ctx = canvas.getContext('2d');
+  ctx.drawImage(img, 10, 10, 50, 50);    // 绘制图像
+}
+img.src = 'myImage.png';                 // 设置图片源地址
+```
+
+可以看到在图片加载完成后，即将此图像绘制在画布中。
+
+###### 变形
+
+在使用 Canvas 中，已经了解过栅格坐标，为了实现更加复杂的图像，可能会使用 Canvas 提供的变形功能。Canvas 提供的几个实用的接口如下所示：
+
+1. `translate(x, y)` 
+
+   此接口用于移动 Canvas 的原点到新的位置 (x, y)，后续的坐标都基于新的原点
+
+2. `rotate(angle)`
+
+   此接口用于沿着原点旋转画布，新绘制的图形会基于新的画布区域进行绘制。接受到参数 angle 为弧度，习惯使用角度的程序员需要在调用时转换一下。
+
+3. `scale(x, y)` 
+
+   此接口用于缩放画布，后续绘制的图像会等比例进行缩放。其中接受的参数 x 为水平方向的缩放因子，y 为垂直方向的缩放因子，如果比 1 大则为放大，比 1 小则会导致绘制的图像缩小。
+
+## Canvas 与圣诞帽
+
+给微信头像戴上圣诞帽是 2018 年圣诞节的一个爆款，2019 年国庆节也出现了类似的活动，这个活动本身很简单，只是给微信头像加上一个圣诞帽的图像，或者加上一面国旗。实现这个小功能，我们可能需要在微信头像的基础层上，将圣诞帽的图像素材调整至合适的位置或状态，应该会需要调整圣诞帽的角度和大小。抽象下产品需求之后，最终确定我们需要提供的能力如下所示：
+
+1. 用户头像图片的获取；
+2. 在图像上叠加显示另一张图像；
+3. 支持调整图形展示的位置；
+4. 支持调整图像显示的角度；
+5. 支持调整图像显示的大小；
+6. 支持完整展示内容的导出为新的图像；
+
+最终预计呈现的效果如下所示：
+
+![canvas 栅格](/img/in-post/canvas/avatar.jpeg)
+
+下面就按照实现的顺序进行介绍：
+
+###### 获取头像图片文件
+
+因为微信小程序中利用 Canvas 展示图片不支持网络图片，因此我们需要在用户授权之后将用户的头像图片保存至本地，简化后实现的代码如下所示：
+
+```javascript
+// 获取更加清晰的图片
+const getBetterAvatar = avatarUrl => {
+  if (avatarUrl.endsWith('/132')) {
+    return avatarUrl.substring(0, avatarUrl.length - 3) + "0"
+  }
+  return avatarUrl;
+}
+
+const rawGetUserInfoAndDownloadAvatar = cb => {
+  wx.getUserInfo({              // 获取用户数据，得到头像地址
+    success: infoRes => {
+      wx.downloadFile({         // 下载头像图片
+        url: getBetterAvatar(infoRes.userInfo.avatarUrl),
+        success: downloadRes => {
+          cb(downloadRes.tempFilePath);  // 通过回调方法将本地的存储路径传出
+        }
+      });
+    }
+  })
+}
+```
+
+上面的代码比较简单，通过 `wx.getUserInfo()` 获取用户的信息，得到当前用户的头像地址，之后通过 `wx.downloadFile()` 下载头像图片，最终存储在本地的 tempFilePath 路径。
+
+一个需要注意的是，默认的头像地址给出的头像是 132*132 的，最终展示出来的头像比较模糊，为了获取高清的头像，需要通过 `getBetterAvatar()` 优化一下，将头像地址尾部的 132 修改为 0，就可以获取 640 * 640 的头像了。相关的细节可以参考 [小程序文档](https://developers.weixin.qq.com/miniprogram/dev/api/open-api/user-info/UserInfo.html) 。
+
+###### 图像叠加展示
+
+使用 Canvas 可以比较容易叠加展示多个图像，直接多次调用 `drawImage()` 接口即可。基础的代码如下所示：
+
+```javascript
+var context = wx.createCanvasContext('avatarCanvas')
+context.drawImage(avatarDir, 0, 0, 300, 300);
+context.drawImage(hatSrc, 0, 0, 100, 100);
+context.draw()
+```
+
+可以看到微信提供了 `wx.createCanvasContext()` 接口实现了查找 DOM 以及创建绘制上下文的能力，得到绘制上下文。后续即可调用绘制上下文的 `drawImage()` 接口绘制图像，此方法需要传递起始坐标以及绘制的宽度和高度，最终调用 `draw()` 接口执行实际的绘制。
+
+###### 支持调整图像展示的位置
+
+我们需要提供给用户调整圣诞帽图像位置的能力，方便圣诞帽与头像更好地匹配，此时可以考虑使用小程序的 Canvas 的 [触摸事件](https://developers.weixin.qq.com/miniprogram/dev/component/canvas.html) ，在用户触摸 Canvas 时调整圣诞帽的位置，并随着用户手指的滑动持续更新位置。因此我们可以绑定 Canvas 提供的 `bindtouchstart` 和 `bindtouchmove` 事件，实现的代码如下所示：
+
+在 html 中定义 Canvas 元素如下所示：
+
+```html
+<canvas canvas-id="avatarCanvas" bindtouchstart="startMoveHat" bindtouchmove="moveHat">
+</canvas>
+```
+
+在 javascript 中指定绑定的事件处理如下所示：
+
+```javascript
+startMoveHat(e) {
+  x = e.touches[0].x
+  y = e.touches[0].y
+  // 根据新的坐标 (x, y) 更新 Canvas 的展示
+},
+```
+
+实现圣诞帽坐标的改变可以通过两种方案：
+
+- 调用 `drawImage()` 传递 (x, y) 坐标
+- 调用绘制上下文的 `translate(x, y)` 修改基准坐标
+
+在此次实现中选择的是下面这种方案。主要是考虑后续旋转功能实现的便利性。
+
+###### 支持调整图像展示的角度
+
+实现图像的角度本身很简单，调用绘制上下文的 `rotate(angle)` 即可。相对比较纠结的是如何直观地操作，参考了前人的方案，使用 slider 滑动组件供用户操作，slider 是一个滑动调节器，提供了 0 ~ 360 的数值，之后将此数值转换为弧度并旋转图像即可。代码如下所示：
+
+```javascript
+rotateHat(e) {
+  var newRotate = e.detail.value / 180 * Math.PI; // 将角度转化为弧度
+  context.rotate(newRotate);
+},
+```
+
+在实现图像旋转时发现图像的旋转是基于原点旋转 canvas，此时图像的旋转会以沿着从原点到图像的轴进行旋转，和一般情况下的用于预期完全不符，而且图像可能会被旋转至不可见的位置。那么如何更符合预期地旋转呢。
+
+一般情况下我们预期的旋转是以图形本身的中心为中心进行旋转，而不是以图形外的一个原点为中心进行旋转。为了更符合预期，只能将待旋转的图像中心放在 Canvas 的原点。理解清楚了，实现方案就很简单了。代码如下所示：
+
+```javascript
+rotateHat(e) {
+  var newRotate = e.detail.value / 180 * Math.PI; // 将角度转化为弧度
+  context.translate(x, y);    // 将当前坐标作为 Canvas 原点
+  context.rotate(newRotate); 
+	context.drawImage(hatSrc, -width / 2, -height / 2, width, height); 
+},
+```
+
+可以看到最终将原点移动到预期的位置 (x, y) ，然后将图像从基于原点的 (-width / 2, -height / 2) 位置开始绘制，图形的大小为 width, height 的矩形。即可实现更加符合直觉的自转。
+
+###### 调整图像显示大小
+
+调整图像的大小也采用 slider 滑动组件，提供了 0% ~ 200% 大小的缩放。实现的代码如下所示：
+
+```javascript
+scaleHat(e) {
+  var newScale = e.detail.value / 100;
+  context.scale(newScale, newScale);
+},
+```
+
+###### 保存渲染的图形
+
+由于 Canvas 原生就支持将画布渲染的图形保存为图片，因此微信小程序也支持了这一功能，提供了 `wx.canvasToTempFilePath()` 将 Canvas 图形保存为图片文件，之后再调用 `wx.saveImageToPhotosAlbum()` 将图片从临时路径保存至相册中即可。在保存至相册时，有权限管理相关的处理，因此与今天介绍的主题无关，在这边简化掉了，简化后的代码如下所示：
+
+```javascript
+wx.canvasToTempFilePath({
+  canvasId: canvasId,
+  success: res => {
+    wx.saveImageToPhotosAlbum({
+      filePath: res.tempFilePath,
+      success: function () {
+        wx.showToast({
+          title: '保存至相册成功',
+        })
+      },
+    });
+  }
+})
+```
+
+实现了上面的功能之后，再优化一下用户授权相关的体验，就完成了相关功能。完整的实现代码可以查看 [Github](https://github.com/hustyichi/christmas-hat) 
+
+## 总结
+
+Canvas 本身还是比较强大的，利用它可以实现复杂的前端图形，也可以实现更强大的交互式的图像操作，有兴趣的话可以亲自动手试试哦。
