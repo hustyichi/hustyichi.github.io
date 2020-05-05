@@ -1,0 +1,323 @@
+---
+layout: post
+title: 'Form 的优化与思考'
+subtitle:   "Form optimization and thinking"
+date:       2020-05-05 19:42:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - frontend
+---
+
+## 初始背景
+
+最近在接触到前端校验的问题，本来是准备只是单纯地调研一下前端的校验问题。刚好又接触到黄金思维圈的思想，因此索性从源头出发，从基础的 form 功能开始考虑，分析痛点，逐步分析优化前端 form 的体验；
+
+
+
+## 现状分析
+
+#### 良好的 form
+
+一个体验良好的前端 form 需要的基础功能：
+
+1. 可以正确输入数据；
+2. 每个输入部分违反限制可以尽早校验，正确提示，方便用户尽早修改；
+3. 各个输入校验完成才能提交；
+
+
+
+#### 痛点描述
+
+对于前端研发人员的，form 管理的痛点在于：
+
+1. 每个输入部分对应于一个输入数据的管理，需要手工维护 O(N) 个输入数据；
+2. 单个输入部分需要实现相应的合法性校验规则，需要在用户输入变化时执行对应的校验，需要维护 O(N) 个校验规则，每个输入需要手工管理 O(N) 个输入触发校验；
+3. 单个输入部分对应校验状态的管理以及校验失败的提示信息的维护，需要维护 O(N) 个 校验状态，以及 O(N) 个校验失败的提示信息；
+
+form 需要维护的数据以及相应的规则随着输入量的增加而线性增加。
+
+
+
+#### 痛点分析
+
+1. 数据合法性
+   - 合法的数据应该是符合一系列约束规则的数据
+   - 为了方便研发人员更方便地定义校验规则，需要提供一系列的基础约束规则用于自由组合，定义数据的约束条件；
+2. 输入数据管理与校验状态维护
+   - 需要提供比较便利的数据管理方案，方便研发人员更好地维护线性增长的输入数据以及校验状态；
+
+3. 异常提示信息的维护
+   - 每个输入部分可能会对应多个校验失败后的异常信息，但是考虑到校验失败必然是违背了某一种基础规则，因此校验失败的信息可以与一种基础的约束规则一一对应；
+
+
+
+#### 产品需求
+
+1. 提供一套通用的基础校验规则，用于定义输入数据的约束条件，在每种校验规则违背时可以指定对应的异常提示信息；
+2. 提供一套简化用户管理数据的方法，用于维护 form 中的输入数据，校验状态，校验提示信息；
+
+
+
+## 具体方案
+
+下面对上面提到的两种产品需求分别寻找对应的开源库，下面分别介绍：
+
+#### 输入校验
+
+1. [validator.js](https://github.com/validatorjs/validator.js)  string 校验库，支持各种具体场景的 string 校验，包括 信用卡， 比特币地址，URL 地址，UUID，RGB 等等，基于不同场景实现了不同的正则表达式，需要可以直接套用；
+2. [validate.js](https://github.com/ansman/validate.js) javascript 对象校验，支持复杂数据结构的校验；
+3. [yup](https://github.com/jquense/yup) 模式校验(schema validation)，构造特定的模式用于校验数据，支持不同的数据类型，包括 string, number, boolean, date, array, object 以及自定义类型。校验部分采用链式来方便组合不同校验规则。
+
+下面以 yup 为例进行介绍如何使用，我们指定一个简单的用户注册为例进行介绍，实现的校验规则如下：
+
+```jsx
+// 指定校验的模式
+let schema = yup.object().shape({
+  name: yup.string()
+    .required("名字必填"),
+  age: yup.number()
+    .required()
+    .positive("年龄必须大于 0")
+    .integer("年龄必然为整数")
+    .max(200, "年龄必须小于 200"),
+  email: yup.string()
+    .email("请输入合法的 email 地址"),
+  born: yup.date()
+    .required("出生日期必填")
+    .max(new Date(), "不支持尚未出生的人"),
+});
+
+// 校验数据
+schema.validate({
+  name: 'jimmy',
+  age: 28,
+  born: "1991-01-01",
+});
+```
+
+上面的例子指定了一个对象校验规则，其中包含 `name` , `age` , `email`, `born` 属性，具体的规则也比较容易理解，具体参数不理解可以直接参考 [官方文档](https://github.com/jquense/yup) 即可。
+
+通过上面的介绍可以看到，开源市场上的校验规则的设计已经符合了数据校验的需求，可以方便我们比较方便地指定校验规则，在每条检验规则违背时都可以指定对应的提示信息，方便直接展示给用户看。
+
+
+
+#### 数据管理
+
+对于 form 数据管理的简化，可以使用的是：
+
+1. [formik](https://github.com/jaredpalmer/formik) 用于简化 form 构建的库，主要是用于优化 react 开发者的 form 构建体验。可以比较方便地管理 form 中的数据，支持自定义校验规则，与 yup 结合得比较好；
+
+对于上面的例子，使用 formik 实现一个简单的 form 应用如下所示：
+
+```jsx
+import { useFormik } from 'formik';
+import * as yup from 'yup';
+
+function SignupForm () {
+  const formik = useFormik({
+    // 指定初始值
+    initialValues: {
+      name: '',
+      age: '',
+      email: '',
+      born: '1991-01-01',
+    },
+
+    // 指定校验规则，与 yup 结合较好
+    validationSchema: yup.object({
+      name: yup.string()
+        .required("名字必填"),
+      age: yup.number()
+        .required()
+        .positive("年龄必须大于 0")
+        .integer("年龄必然为整数")
+        .max(200, "年龄必须小于 200"),
+      email: yup.string()
+        .email("请输入合法的 email 地址"),
+      born: yup.date()
+        .required("出生日期必填")
+        .max(new Date(), "不支持尚未出生的人"),
+    }),
+
+    // form 提交触发方法
+    onSubmit: values => {
+      alert(JSON.stringify(values, null, 2));
+    },
+  });
+
+  return (
+    // 提交时触发 formik 提供的 handleSubmit 方法，此方法会最终调用 onSubmit 方法  
+    // 定义的 id 和 name 属性与初始值的设置的 key 相同,  
+    // 数据改变时调用 formik 提供的 handleChange 方法，方便更新数据  
+    // 失去焦点时调用 formik 提供的 handleBlur 方法，方便判断是否访问过  
+    // 获取输入数据可以直接从 formik.values 中获取  
+    // 获取校验失败的提示数据可以从 formik.errors 中获取  
+    // 获取是否访问过数据可以从 formik.touched 中获取  
+    
+    <form onSubmit={formik.handleSubmit}>
+      <div>
+        <label htmlFor="name">Name</label>
+        <input
+          id="name"
+          name="name"
+          type="text"
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
+          value={formik.values.name}
+        />
+      </div>
+      {formik.touched.name && formik.errors.name ? (
+        <div>{formik.errors.name}</div>
+      ) : null}
+
+      <div>
+        <label htmlFor="age">Age</label>
+        <input
+          id="age"
+          name="age"
+          type="text"
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
+          value={formik.values.lastName}
+        />
+      </div>
+      {formik.touched.age && formik.errors.age ? (
+        <div>{formik.errors.age}</div>
+      ) : null}
+
+      <div>
+        <label htmlFor="email">Email Address</label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
+          value={formik.values.email}
+        />
+      </div>
+      {formik.touched.email && formik.errors.email ? (
+        <div>{formik.errors.email}</div>
+      ) : null}
+
+      <div>
+        <label htmlFor="born">Born</label>
+        <input
+          id="born"
+          name="born"
+          type="date"
+          onChange={formik.handleChange}
+          onBlur={formik.handleBlur}
+          value={formik.values.born}
+        />
+      </div>
+      {formik.touched.born && formik.errors.born ? (
+        <div>{formik.errors.born}</div>
+      ) : null}
+      <button type="submit">Submit</button>
+    </form>
+  );
+};
+```
+
+通过上面的代码可以看到 formik 把数据的维护隐藏起来了，实现方式是通过接管所有的状态变化，数据输入部分的数据变化直接触发 formik 提供的方法，需要输入数据时直接从 `formik.values` 中获取，需要异常数据 `formik.errors` 中获取。但是输入组件必须保证指定 name 属性，所有的属性都需要使用此 name 值作为键进行访问。
+
+通过上面的代码可以看到使用 formik 基本上是通过将数据的管理移交给 formik，通过在变化时以合适的方式通知 formik，从而实现简化数据管理的目的。但是可以看到有大量的样板的代码，formik 提供了简化代码的方法，封装得更好的方案如下所示：
+
+```jsx
+import { Formik, Form, Field, ErrorMessage } from 'formik';
+import * as yup from 'yup';
+
+const SignupFormShort = () => {
+  return (
+    // 使用 Formik 组件替换 useFormik 的写法，封装了 context 用于传递必要的信息  
+    // 使用 Form 替代了原生 form，不用额外绑定触发事件了  
+    // 使用 Field 替代了 input，不用绑定一系列的事件  
+    // 使用 ErrorMessage 替代了原始的数据展示组件，不用额外指定可见性了  
+    <Formik
+      initialValues={ {
+        name: '',
+        age: '',
+        email: '',
+        born: '1991-01-01',
+      } }
+
+      validationSchema={yup.object({
+        name: yup.string()
+          .required("名字必填"),
+        age: yup.number()
+          .required()
+          .positive("年龄必须大于 0")
+          .integer("年龄必然为整数")
+          .max(200, "年龄必须小于 200"),
+        email: yup.string()
+          .email("请输入合法的 email 地址"),
+        born: yup.date()
+          .required("出生日期必填")
+          .max(new Date(), "不支持尚未出生的人"),
+      })}
+      // onSubmit 方法提供了 setSubmitting 用于设置当前正在提交，避免无意识多次提交
+      onSubmit={(values, { setSubmitting }) => {
+        alert(JSON.stringify(values, null, 2));
+        setSubmitting(false);
+      }}
+    >
+      <Form>
+        <div>
+          <label htmlFor="name">Name</label>
+          <Field name="name" type="text" />
+        </div>
+        <ErrorMessage name="name" />
+        <div>
+          <label htmlFor="age">Age</label>
+          <Field name="age" type="text" />
+        </div>
+        <ErrorMessage name="age" />
+        <div>
+          <label htmlFor="email">Email Address</label>
+          <Field name="email" type="email" />
+        </div>
+        <ErrorMessage name="email" />
+        <div>
+          <label htmlFor="born">Born</label>
+          <Field name="born" type="date"></Field>
+        </div>
+        <ErrorMessage name="born" />
+        <button type="submit">Submit</button>
+      </Form>
+    </Formik>
+  );
+};
+```
+
+优化部分是封装了一系列组件，使用起来更加方便，很多样板代码都可以不用再写了。最终大大简化 form 管理的成本。
+
+
+
+## 一些感受
+
+在调研 formik 中设计者对比 [redux-form](https://github.com/redux-form/redux-form) 时提到一个源于 redux 作者 Dan Abramov 对 form 的思考：`form state is ephemeral and local` ，简单来说就是 form 的状态是局部和短暂的，因此不使用全局性的 redux 去管理数据。
+
+在技术分享中作者也提到实现公共库的心得，一起记录在这边：
+
+1. Scratch your own itch，直译是抓自己的痒，意思是首先关注解决自己的问题，不要上来就幻想做一个大而全的东西；
+2. Stand on the shoulers of giants，站在巨人的肩膀上，如果可以的话，没必要所有东西都自己来，可以建立在其他库的基础上，作者早期就是在从拓展 [rebass-recomposed](https://github.com/jxnblk/rebass-recomposed/blob/master/src/withForm.js) 起步的；
+3. Solve for the 80% use case, 解决 80% 场景下的问题，作者就主要考虑 react 平台；
+4. Make it easy adopt/delete 容易加入，也容易删除，降低迁移使用的成本，无过多依赖与副作用，可以容易切换；
+
+思路还是不错的，去实现自己的第三方库的时候也可以考虑这些思想。
+
+
+
+
+
+
+
+
+
+
+
+
+
