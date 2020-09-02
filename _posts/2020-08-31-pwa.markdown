@@ -1,0 +1,227 @@
+---
+layout: post
+title: 'PWA 与 Github Page'
+subtitle:   "PWA and Github page"
+date:       2020-08-31 22:50:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - frontend
+
+---
+
+## 基础介绍
+
+在开始介绍 PWA 的具体应用前，我们可以先介绍下 PWA 是什么。
+PWA 是一系列的技术能力，可以用户增强 Web 的功能，可以让传统的 Web 网站对移动端用户更加友好。最终期望传统的 Web 网站在移动端可以达到接近 APP 的能力
+
+PWA 另一个特点是来自于其名字，Progressive web apps，从名字上可以看到相关的技术都是渐进式增强的，因此技术人员可以根据需要增强，而且在不支持新技术的情况下应该可以回到最初的能力。
+
+#### 具体的特点
+
+- 可安装性，类似原生 APP，可以被安装在主屏幕上
+- 可靠性，可以在离线或网络很差时使用
+- 可连接，有新内容可以通知给用户
+- 安全性，与应用间的连接应该是安全的
+
+[文档](https://developer.mozilla.org/zh-CN/docs/Web/Progressive_web_apps/Introduction) 还列举了一些其他的特点，但是这些是 PWA 最突出的特点，后面的介绍也主要涉及 PWA 的这些特点
+
+#### PWA 与 Github Page
+
+Github Page 是 Github 提供的一个博客托管途径，技术人员可以在不需要自己的服务器和域名即可搭建一个博客服务，而且定制化程度还比较高，个人博客就是长期托管在 Github Page 上。这边的介绍就是以 Github Page 为例进行介绍，如何将 Web 网站改造为 PWA。
+
+由于 Github Page 本身就是采用  https 的，因此安全性已经得到的满足，因此需要关注的特点主要在于可安装性，可靠性，可连接的特点上，对应的技术分别是：
+
+- `Manifest` ，此技术是 [A2HS](https://developer.mozilla.org/zh-CN/docs/Web/Progressive_web_apps/%E6%B7%BB%E5%8A%A0%E5%88%B0%E4%B8%BB%E5%B1%8F%E5%B9%95) 的实现，可以将网站安装至主屏幕
+- `Service Worker 与 Cache` ，这两种技术可以实现对网站的响应进行缓存，从而实现离线访问
+- `Web Push 和 Notification` ，这两种技术可以实现将消息推送并通知给用户，从而实现可连接性
+
+下面就分别对涉及到技术进行梳理：
+
+## Manifest
+
+Manifest 是就是一个 json 格式的配置文件，用于浏览器识别并正确展示，主要包含的字段包括下面：
+
+```javascript
+{
+  "name": "Bryan Blog",         // 名字
+  "short_name": "Bryan Blog",   // 缩略名，空间不够时展示缩略名
+  "icons": [                    // 应用的图标
+    {
+      "src": "icons/128.png",
+      "sizes": "128x128",
+      "type": "image/png"
+    },
+  ],
+  "background_color": "#fff",    // 背景色         
+  "start_url": "/",               // 启动时加载资源你的路径
+  "display": "standalone",        // 展示模式，fullscreen 是全屏，standalone 是独立应用模式，影响最终 App 展示效果
+}
+```
+
+在 html 里面正确连接此配置文件即可
+
+```html
+<link rel="manifest" href="path/to/manifest.json">
+```
+
+按照这个配置之后浏览器应该就可以正确识别，并可以转换为 App 了
+
+当然浏览器可能还会对你有额外的要求，比如 Chrome 还要求网站是 https，并且要求支持离线缓存，但是理论上安装只和 Manifest 相关。
+
+由于本人使用 ios 系统，按照 ios 的要求，需要在 html 中增加如下配置文件
+
+```html
+<link rel="apple-touch-icon" href="path/to/icon.png">
+```
+
+通过额外的参数增加图标的图片，最终即可在 iphone 中正确地将应用添加至主屏幕上，最终展示的效果如下所示：
+
+![app](/img/in-post/pwa/icon.jpeg)
+
+通过前面介绍可以看到 Manifest 本身并不对 Web 网站进行复杂的改造，只是单纯地支持了将应用的快捷方式添加到桌面，让访问更加的便利
+
+
+
+## 离线缓存
+
+为了支持离线缓存需要使用 Service Worker 与 Cache 机制，下面分别进行介绍：
+
+#### Service Worker
+
+Service Worker 是一种独立于浏览器网页的脚本，可以在单独的线程中执行任务，利用 Service Worker 执行任务可以避免阻塞主线程。
+
+另外 Service Worker 还具有一个巨大的优势，就是 Service Worker 可以截获网络请求，因此利用 Service Worker 很容易实现网络代理，也可以比较方便地实现离线缓存的功能
+
+Service Worker 的使用也十分简单，一般情况下，将 Service Worker 相关的功能实现在独立的文件中，一般叫做 `sw.js` ，然后将相关的功能通过 `navigator.serviceWorker.register()` 注册上，功能就生效了。 
+
+- Service Worker 注册
+
+  为了保证渐进式地增强，注册时需要判断是否支持 Service Worker，如果支持则注册，相关的代码如下所示：
+
+  ```javascript
+  if(navigator.serviceWorker){   // 判断浏览器是否支持
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => handleRegistration(registration))
+      .catch((error) => {console.log('ServiceWorker registration failed: ', error)}
+  }
+  ```
+
+- 功能实现
+
+  Service Worker 是事件驱动的，可以根据需要在特定的事件上注册需要的功能，为了实现网络请求的拦截，可以监听 `fetch` 事件即可，顺便说一句，Service Worker 中都是基于 Promise 进行任务处理的。为了实现离线缓存，我们实现的功能如下所示：
+
+  ```javascript
+  self.addEventListener('fetch', event => {
+    // 根据 event.request 获取到网络请求信息，构造返回数据
+  })
+  ```
+
+  我们可以根据自己的需要选择合适的策略去构造返回数据，可以选择优先从缓存中获取数据，也可以选择优先从网络请求中获取。
+
+#### Cache
+
+Cache API 是一个特别适合用于缓存网络请求的技术，存储的键是网络请求 Request，存储的值是网络请求返回值 Response。
+
+在使用时可以通过`caches.match(request)` 匹配是否存在对应缓存，在需要更新缓存时通过`caches.put()` 增加缓存
+
+#### 离线缓存实现
+
+在实现离线缓存时，主要在 `fetch` 事件的处理方法中，根据网络请求以及实际的业务需要选择合适的资源缓存策略，一般情况下存在下面的策略：
+
+1. Cache Only 仅缓存，适合用于处理不变而且预加载的静态资源
+2. Network Only 仅网络，适合用于处理实时性极高的网络资源，没有缓存的价值
+3. Cache First 优先缓存，适合实时性要求不太高的网络资源，使用缓存可以避免重复请求
+4. Network First 优先网络，适合实时性相对高，但是也能接受缓存数据的请求
+5. Stale While Revalidate 优先缓存，每次都更新缓存，网络请求返回比较快，同时也能保证实时性，适合范围较广
+
+在实现离线缓存中，还有一个值得关注的优化机制是预缓存，对于服务中的静态资源，可以使用预缓存大大加快请求响应速度，在 Service Worker 中一般在 `install` 时执行预缓存，为了保证资源的更新，因此还需要执行缓存资源的清理，一般会在 `activate` 时执行资源的清理。
+
+预缓存一般会调用 Cache 的 `addAll()` 去加载多个资源，代码如下所示：
+
+```javascript
+self.addEventListener('install', e => {
+  e.waitUntil(
+    caches.open(CACHE).then(cache => {
+      return cache.addAll(PRECACHE_LIST)   // PRECACHE_LIST 是预加载的资源列表
+        .then(self.skipWaiting())
+        .catch(err => console.log(err))
+    })
+  )
+});
+```
+
+
+
+## 通知机制
+
+通知机制的实现主要涉及到两个独立功能，分别是消息的推送与消息的通知。
+
+#### 消息推送
+
+对于消息推送机制存在 [公共的标准](https://tools.ietf.org/html/draft-ietf-webpush-protocol-12#section-2) ，基本的流程如下所示：
+
+```
+    +-------+           +--------------+       +-------------+
+    |  UA   |           | Push Service |       | Application |
+    +-------+           +--------------+       |   Server    |
+        |                      |               +-------------+
+        |      Subscribe       |                      |
+        |--------------------->|                      |
+        |       Monitor        |                      |
+        |<====================>|                      |
+        |                      |                      |
+        |          Distribute Push Resource           |
+        |-------------------------------------------->|
+        |                      |                      |
+        :                      :                      :
+        |                      |     Push Message     |
+        |    Push Message      |<---------------------|
+        |<---------------------|                      |
+        |                      |                      |
+```
+
+涉及到三个部分：
+
+1. UA，用户代理，即当前用户的浏览器
+2. Push Service，推送服务器，需要支持推送的服务的支持，Google 提供了 Push Service 的实现 FCM ，可用于帮助实现消息推送，可惜国内被墙无法使用
+3. Application Server，应用服务器，一般是业务本身的服务器，在需要时可以发起消息推送
+
+基础的流程是：
+
+1. 用户在 Service Worker 中调用 pushManager 的 `subscribe()` 方法发起订阅，Push Service 接收到订阅后，返回资源信息 Distribute Push Resource， 此信息唯一标识一个客户端的订阅，可以用于向此客户端推送消息；
+2. 用户将资源信息 Distribute Push Resource 发送给应用服务器，应用服务器保存后在需要的时候可以将信息发送给 Push Service，此时需要带上对应的资源信息，Push Service 会根据资源信息将消息推送给特定的用户；
+
+通过上面的流程可以看到，整个流程并不复杂，但是由于 FCM 被墙，从用户到 FCM 的订阅无法完成，因此目前这一套流程比较难应用在实际的业务中
+
+
+
+#### 消息通知
+
+消息通知是指在消息已经推送给用户浏览器的情况下，将消息通知给用户的过程
+
+消息的通知使用的是 Notification，主要涉及到权限的申请与实际的消息通知
+
+1. 权限申请
+
+   权限申请就是调用`Notification.requestPermission()` 申请下通知权限，代码如下所示：
+
+   ```javascript
+   Notification.requestPermission( function(status) {
+     // 值为 "granted" 时就是用于允许发送通知了
+   });
+   ```
+
+2. 实际消息通知
+
+   实际发送通知消息通过 `new Notification(title, {body: xxx})` 即可发出一条通知消息
+
+由于 Github page 是个人博客，没有复杂的通知需求，暂时没有加入个人 Github page 中，有需要可以自行加入通知机制
+
+
+
+## 总结
+
+基础的 PWA 功能与相关技术梳理完成，可以看到，主要的功能由于兼容性或其他的一些原因使用都比较缺失，虽然目前实用价值有限，但是不妨碍 PWA 给出了一些增强 Web 网站，对移动端用户更友好的建议，PC 上的 Web 服务面向移动端用户的增强与优化不会是一蹴而就，可以采纳渐进的策略，逐步增强，在不影响现有用户的情况下，给支持新特性的用户提供更优的体验。
