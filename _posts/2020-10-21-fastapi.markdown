@@ -1,0 +1,191 @@
+---
+layout: post
+title: '基于 FastAPI 与 MongoDB 的数据流梳理'
+subtitle:   "Data flow base on FastApi and MongoDB"
+date:       2020-10-21 07:59:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - FastAPI
+    - MongoDB
+
+---
+
+## 背景介绍
+
+自从 Python 3.5 以来，Python 在类型注解上的功能越来越强大，在 Python 3.7 又提供了的 dataclass， 可以比较便利地提供结构化的数据类。
+
+与此同时，各种第三方的库也在基于类型注解提供了更便利好用的服务，其中 FastAPI 便是一款提供类型注解的 Web 服务框架，在保证了极高的性能的同时，提供了便利的数据管理。可以大大提升 Python 开发者的开发体验。
+
+同时由于团队长期使用 MongoDB 存储数据，因此项目最初就选择了 MongoDB 作为数据库，在实际开发中，遇到了一些实际的问题，实际解决这些问题后，这边就回头对其中的具体情况进行梳理，帮助后面的开发者少踩坑。
+
+## 目标
+
+项目的目标是希望能提升开发体验，尽最大可能提供数据提示，因此明确目标：
+
+1. 服务对外提供的数据尽量避免开发者手工转换；
+2. 服务内部传递的数据尽量采用结构化的数据类，这样带来的提示对开发者最友好；
+
+## 数据传递
+
+首先我们对 Web 服务中具体的数据流向进行梳理，我们将涉及到的主要元素进行简化，得到三个相关部分：
+
+1. 对外接口
+2. 内部处理
+3. MongoDB
+
+具体的数据流向如下所示：
+
+```mermaid
+graph TD;
+  对外接口-->内部处理;
+  内部处理--> MongoDB;
+  MongoDB-->内部处理;
+  内部处理-->对外接口;
+```
+
+可以看到流程上看到，数据基本可以简化为从外部传递到服务内部，处理后又返回新的数据回去的流程。
+
+我们可以根据实际的场景定义下各个部分的数据格式：
+
+1. 对外接口一般是 API 请求，此时接收的数据是 json 格式的数据；
+2. 内部处理中我们期望是结构化的数据类；
+3. MongoDB 一般使用的是 Pymongo，因此处理的数据一般是 dict 类型的数据，而数据库输出也是 dict 类型的数据；
+
+## 具体流程
+
+这边按照实际的数据流的传递过程，梳理下各个阶段的数据流转情况
+
+#### 数据传入
+
+外部数据通过对外接口传入时，传入的是 json 格式的数据，由于内部处理时希望都通过结构化的数据类进行处理，因此需要进行转换
+
+这边的转换是由 FastAPI 提供的，开发者只需要定义必要的数据类型即可，类似如下所示：
+
+```python
+class Item(BaseModel):
+    name: str
+    description: Optional[str] = None
+    price: float
+    tax: Optional[float] = None
+
+@app.post("/items")
+def update_item(item: Item):
+    pass
+```
+
+后面处理中就可以直接使用结构化的数据类进行处理了
+
+但是其中存在一个问题就是数据可能存在 `ObjectId` 类型的数据，如果我们在数据类 `Item` 中直接定义 `ObjectId` 类型 ，此时会报错，因为 pydantic 不知道如何校验 `ObjectId` 类型，此时我们可以自行定义类型与校验规则，得到 `ObjectId` 类型的数据，定义类型如下所示：
+
+```python
+class OID(str):
+    @classmethod
+    def __get_validators__(cls) -> Generator:
+        yield cls.validate
+
+    @classmethod
+    def validate(cls, v: Any) -> ObjectId:
+        try:
+            return ObjectId(str(v))
+        except InvalidId:
+            raise ValueError("Not a valid ObjectId")
+```
+
+这样就可以在数据类型中直接使用此类型，得到的就是 `ObjectId` 类型的数据，比如：
+
+```python
+class Item(BaseModel):
+    name: str
+    description: Optional[str] = None
+    price: float
+    tax: Optional[float] = None
+    user_id: OID
+```
+
+#### 内部处理数据
+
+在内部阶段处理数据中，始终处理结构化的数据，但是在实际写入 MongoDB 时，需要转化为 dict 类型的数据传入 Pymongo 进行处理，此时在 FastAPI 框架下，一般会调用 `jsonable_encoder()` 转换数据，使用 MongoDB 的开发者基本都会面对一个问题，数据中存在 `ObjectId` 类型的数据，FastAPI 使用的数据管理库 Pydantic 是不支持 `ObjectId` 类型的，此时可以通过自定义 config 提供一个基础的数据类，自定义 `ObjectId` 类型的 json 化操作，其他数据类继承这个基础类即可。基础类类似如下所示：
+
+ ```python
+class BaseMongoModel(BaseModel):
+    class Config(BaseConfig):
+        json_encoders = {
+            ObjectId: lambda oid: str(oid),
+        }
+ ```
+
+对 Pydantic 的数据类配置相关信息不熟悉的可以参考 [Pydantic 文档](https://pydantic-docs.helpmanual.io/usage/model_config/) 
+
+这样在 MongoDB 的使用时，就可以使用类似如下所示的用法：
+
+```python
+from fastapi.encoders import jsonable_encoder
+
+def create(item: Item):
+  trans_item = jsonable_encoder(item)
+  db.collection.insert(trans_item)
+```
+
+#### 处理 MongoDB 返回数据
+
+在 MongoDB 返回的数据中，一般都会存在 `_id` 字段，此数据是 MongoDB 的默认 id，为了将 MongoDB 返回的数据在系统内进行处理，期望能转换为结构化的数据类，此时存在的一个问题是 pydantic 认为 `_` 开头的字段是隐藏字段，因此转换后没有办法正常访问，为了解决这个问题，一个解决方案是将 MongoDB 返回的数据中的 `_id` 转换为 `id` 字段，之后在写入 MongoDB时再转换回去，因此需要实现如下所示的基础类：
+
+```pythoN
+class MongoModel(BaseModel):
+    id: OID = Field(default_factory=ObjectId)
+
+    @classmethod
+    def from_mongo(cls, data: dict) -> Union["MongoModel", Dict]:
+        """We must convert _id into "id". """
+        if not data:
+            return data
+        id = data.pop("_id", None)
+        return cls(**dict(data, id=id))
+
+    def mongo(self, **kwargs: Any) -> Dict[Any, Any]:
+        exclude_unset = kwargs.pop("exclude_unset", True)
+        by_alias = kwargs.pop("by_alias", True)
+
+        parsed = self.dict(
+            exclude_unset=exclude_unset,
+            by_alias=by_alias,
+            **kwargs,
+        )
+
+        # Mongo uses `_id` as default key. We should stick to that as well.
+        if "_id" not in parsed and "id" in parsed:
+            parsed["_id"] = parsed.pop("id")
+
+        return parsed
+```
+
+此基类提供了两个方法，其中 `from_mongo()` 用于将 MongoDB 中获取的数据中的 `_id` 转化为 `id` 字段，这即可正确转化为格式化的数据类，为了保证最终写入 MongoDB 时可以正常工作，`mongo()` 方法必须在写入 MongoDB 前调用，将 `id` 字段转化为 `_id` 字段，保证写入正常
+
+#### 数据传出
+
+对于请求的返回，最终期望返回的是 json 格式的数据，而内部处理得到的数据是结构化的数据类，我们需要进行转换
+
+同样 FastAPI 提供了转换的支持，开发者可以直接返回结构化的数据类，FastAPI 会执行必要的转换，开发者唯一需要做的就是通过 `response_model` 指定返回的数据类型即可。使用类似如下所示：
+
+```python
+app = FastAPI()
+
+class Item(BaseModel):
+    name: str
+    description: Optional[str] = None
+    price: float
+    tax: Optional[float] = None
+    tags: List[str] = []
+
+@app.post("/items/", response_model=Item)
+async def create_item(item: Item):
+    return item
+```
+
+## 总结
+
+通过梳理 Web 服务的数据流，解决了 FastAPI 与 MongoDB 配合使用中碰到的一些问题，最终实现了预期的目标，在实际的业务开发中，使用的都是结构化的数据类，在对外的数据部分也不需要开发者执行手工转换，有一些不是很便利的地方在于与 MongoDB 交互的地方都需要执行必要的转换，这种不便可以通过封装基础的数据库操作方法，然后业务开发都通过组合此基础方法来实现，从而避免忘记执行转换带来的问题。
+
