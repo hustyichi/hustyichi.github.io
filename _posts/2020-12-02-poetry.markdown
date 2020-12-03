@@ -1,0 +1,78 @@
+---
+layout: post
+title: 'Poetry 包管理'
+subtitle:   "Python package management by poetry"
+date:       2020-12-02 10:39:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+
+---
+
+## 背景介绍
+
+在 Python 的包管理中，一直没有一个完善的包管理工具，很长一阵子，项目依赖都是通过 `requirements.txt` 定义必要的依赖，而使用 `requirements.txt` 不仅繁琐，而且比较不方便维护，甚至没有办法维护直接依赖和间接依赖，虽然后面有 [pip-tools](https://github.com/jazzband/pip-tools) 去提供一些便利，但是包管理依旧不方便。
+
+哪里有不便，哪里就有人提供解决方案。大佬 Kenneth Retiz 给 Python 圈提供了新的包管理工具 pipenv ，咋一看还是挺棒的，但是社区过一阵子发现，这玩意是一个半成品，存在自动升级以及一些其他的 bug，慢慢也被弃用了。
+
+这边是最近发现的一个新的包管理工具 [Poetry](https://github.com/python-poetry/poetry) ，一圈体验下来，整体感觉还是不错的，整体搜索一圈，风评也不错，作为一个备选方案，在这边推荐下。
+
+## 基础需求
+
+对于 Python 包的管理，其实主要就是两个需求：
+
+1. 包依赖的管理；
+2. 虚拟环境的管理；
+
+另外还有一个小众的需求，那就是 Python 的打包与发布，这个在项目作为库提供时会用上。
+
+## Poetry 体验
+
+下面就针对上面所说的基础需求分别来体验下 Poetry 提供的解决方案，看看是不是符合大家的预期
+
+#### 依赖管理
+
+Poetry 的包管理文件使用的是 Python 社区 2016 提出的 [PEP 518](https://www.python.org/dev/peps/pep-0518/) 标准方式进行包管理，与之前的文件管理方式比起来，由于被列入标准，会被更多的工具所支持，不熟悉的可以先了解下。其文件类似如下所示的形式：
+
+```toml
+[tool.poetry]
+name = "poetry-demo"
+version = "0.1.0"
+description = ""
+authors = ["Sébastien Eustace <sebastien@eustace.io>"]
+
+[tool.poetry.dependencies]
+python = "*"
+
+[tool.poetry.dev-dependencies]
+pytest = "^3.4"
+```
+
+构建包依赖文件文件的也十分简单，执行 `poetry new ` 加上项目名即可构建出完整的项目目录，对于已有的项目，执行 `poetry init` 也可以额外增加 `pyproject.toml` 包依赖文件。初次执行会有不少的信息需要添加，但是可以一路选择默认选项下去即可完成，后续可以更改。
+
+安装的命令也很常规，通过 `poetry add` 可以添加依赖包，poetry 会增加 `poetry.lock` 文件去固定所有直接依赖和间接依赖的版本，同时会有相关的 hash 包校验。后续 `poetry.lock` 期望被提交到项目工程中，这样就可以保证安装环境的一致性。
+
+其他可以通过 `poetry install` 直接安装所需的依赖，此时 poetry 会保证包的版本与 `poetry.lock` 保持一致，如果 `poetry.lock` 文件不存在，那么 poetry 会根据 `pyproject.toml` 声明的直接依赖的版本，安装最新的包。这个也是之前 pipenv 做的不够好的地方，pipenv 在有 `.lock` 文件时安装会默认升级。
+
+#### 虚拟环境管理
+
+poetry 的虚拟环境管理十分简单，poetry 默认会创建对应的虚拟环境，如果想要在虚拟环境执行对应的代码，使用 `poetry run python your_script.py ` 即可执行对应的代码，如果想激活对应的虚拟环境，执行 `poetry shell` 即可
+
+#### 打包与发布
+
+打包的发布之前是一个需要比较让人需要花费精力的事情，需要增加对应的配置信息，但是由于 poetry 使用的是标准的包管理方式，在项目最初的时候，必要的信息就已经被配置管理好了，最终的发布是一个极其便利的事情。
+
+执行 `poetry build` 即可将项目正确打包
+
+执行 `poetry publish` 即可将项目发布，默认是发送至 pypi 上，如果有需要也可以发送至私有仓库中
+
+甚至你可以 `poetry publish --build` 一个命令完成打包发布，输入 pypi 用户名和密码接口拥有一个共享包.
+
+## 总结
+
+完整的 poetry 使用起来，体验还是不错的，优化了相关的服务的体验，特别是打包的过程，体验十分丝滑。默认情况下也会存在一些不便的地方，比如默认的包是从 pypi 上下载的，国内可能会比较慢一些，这个可以在配置文件中增加配置来源信息即可切换至国内下载源，采用标准的文件管理格式后拓展起来也比较方便。新项目可以考虑尝试下。
+
+
+
