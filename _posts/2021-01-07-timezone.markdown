@@ -1,0 +1,183 @@
+---
+layout: post
+title: 'Python 中的时区问题'
+subtitle:   "Timezone problem in python"
+date:       2021-01-07 23:12:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+
+---
+
+## 问题背景
+
+使用 Python 进行了许久的开发，一直没有踩到时区的坑，最近新的业务中引入了比较多的服务，而且使用 grpc 进行数据通讯，不幸踩到了时区的坑，果然偷的懒最终还是会有报应的，于是梳理下对应的时区问题，同时发现系统中之前的数据库 Mongo 中的时区问题，一起整理如下。
+
+## 基础概念
+
+#### 几个时间概念
+
+首先是几个常见的时间概念
+
+- GMT 时间：格林威治时间，基准时间
+- UTC 时间：Coordinated Universal Time，全球协调时间，更精准的基准时间，与 GMT 基本等同
+
+- CST 中国基准时间：为 UTC 时间 + 8 小时，即 UTC 时间的 0 点对应于中国基准时间的 8 点，即为一般称为东八区的时间
+
+#### ISO 8601
+
+一种标准化的时间表示方法，表示格式为 ：`YYYY-MM-DDThh:mm:ss ± timezone`，可以表示不同时区的时间，时区部分用`Z` 表示为 UTC 标准时区。两个例子：
+
+- 1997-07-16T08:20:30Z  表示的是 UTC 时间的 1997 年 7 月 16 号 8:20:30 
+- 1997-07-16T19:20:30+08:00 表示的是东八区时间的 1997 年 7 月 16 号 19:20:30 
+
+#### 时间戳
+
+1970年1月1日 00:00:00 UTC+00:00时区的时刻称为epoch time，记为`0`，当前的时间戳即为从 epoch time 到现在的秒数，一般叫做 timestamp，因此一个时间戳一定对应于一个特定的 UTC 时间，同时也对应于其他时区的一个确定的时间。因此时间戳可以认为是一个相对安全的时间表示方法。
+
+## datetime 实践
+
+datetime 是 python 中最基础的一个时间管理包，下面分别利用 datetime 去实践下对应的时区概念
+
+#### datetime 类型
+
+datetime 分成两种类型：
+
+- naive，本地类型的时间，当 datetime 中没有指定时区信息时就是这种类型，此类型的时区是根据运行环境确定对应的时区。因此这种类型的时间会因为运行环境的不同而得到不同时间戳
+- aware，带有时区类型的时间，这种类型的时间对象由于时间和时区都是确定的，因此对应于确定的时间戳
+
+举例如下:
+
+```python
+from datetime import datetime, timezone
+
+now = datetime.now()
+now.tzinfo      # None
+
+utc_now = datetime.now(timezone.utc)
+utc_now.tzinfo  # UTC
+```
+
+可以看到上面的例子中，`now` 没有指定时区，为 naive 类型的时间，其时区与运行环境相关。而 `utc_now` 指定了 UTC 时区，为 aware 类型的时间。
+
+#### 获取当前时间
+
+- datetime.now() 可用于获取当前时间，支持设置对应的时区，如果不设置时区默认获取的是本地的时间，根据是否指定时区可能穿件出 naive 类型的时间或者 aware 类型的时间，但是对应的时间戳都是符合预期的。
+- datetime.utcnow() **谨慎使用** 获取是当前 UTC 对应的时间，但是生成的 datetime 对象是没有指定时区的，因此使用的是本地时区，创建的是 naive 类型的时间。因此如果运行环境为东八区，得到的时间是 UTC 对应的时间，但是时区是东八区，最终得到的时间会比预期早 8 个小时，转化得到时间戳也是不符合预期的。
+
+举例如下：
+
+```python
+from datetime import datetime
+now = datetime.now()
+now.timestamp()  # 1610035129.323702
+unow = datetime.utcnow()
+unow.timestamp()  # 1610006329.323797
+```
+
+最终在 2021-01-07 23:58:49 在东八区环境下运行上面的代码，`now.timestamp()` 得到时间戳转化为对应的时间为东八区的 2021-01-07 23:58:49，但是 `unow.timestamp()` 得到的时间戳对应的时间为东八区的 2021-01-07 15:58:49，对应于 UTC 时间 2021-01-07 07:58:49，和 UTC 的当前时间完全对不上。
+
+#### 时间戳操作
+
+- datetime.timestamp() 生成当前时间对应的时间戳
+- datetime.fromtimestamp() 根据时间戳生成运行环境时区对应的时间
+- datetime.utcfromtimestamp() **谨慎使用** 根据时间戳生成对应的 UTC 时间，由于生成的 datetime 是没有指定时区的，因此获取时间戳看起来得到的是 8 个小时之前时间的时间戳
+
+对于上面的例子，我们使用前面得到的当前时间戳 1610035129 进行测试如下：
+
+```python
+from datetime import datetime
+
+timestamp = 1610035129
+d1 = datetime.fromtimestamp(timestamp)  # 2021-01-07 23:58:49
+d2 = datetime.utcfromtimestamp(timestamp) # 2021-01-07 15:58:49
+```
+
+最终得到 d1 是本地时区正确的时间，但是 d2 是 UTC 的是啊金，但是没有指定的时区，因此看起来就是就是本地 8 个小时前的时间了
+
+#### 时区设置
+
+默认构建的 datetime 是没有时区信息的，可以通过 datetime.replace() 为时间设置上时区，但是这样必须保证对应的时间与时区信息匹配，否则就会导致错误的时区的时间，一个简单例子就是：
+
+```python
+from datetime import datetime, timedelta, timezone
+tz_utc_8 = timezone(timedelta(hours=8))  # 创建时区UTC+8:00，即东八区对应的时区
+now = datetime.now()  # 默认构建的时间无时区
+dt = now.replace(tzinfo=tz_utc_8)  # 强制设置为UTC+8:00
+```
+
+设置上对应的时区后，对应的日期与时间是不变的，但是由于设置了全新的时区，如果与之前的时区不同，那么对应的时间戳就会改变，使用此方法时要谨慎
+
+#### 时区转换
+
+可以将一个带有时区信息的时间转换为另一个时区的时间，通过 datetime.astimezone() 可以实现，一个简单的例子是：
+
+```python
+from datetime import datetime, timedelta, timezone
+utc_dt = datetime.utcnow().replace(tzinfo=timezone.utc)  # 构建了 UTC 的当前时间
+bj_dt = utc_dt.astimezone(timezone(timedelta(hours=8)))  # 将时区转化为东八区的时间
+```
+
+通过 `astimezone()` 进行转换后，虽然时间变化了，但是对应的是同样的基准时间，因此对应的时间戳是不变的，
+
+## Grpc 实践
+
+在 Grpc 的使用中，设计到时间戳对象 Timestamp 与时间的转换，Timestamp 对象支持通过 python 中的时间戳构建，即当前时间的对应的时间戳秒数，也支持通过 datetime 构建。对应的接口如下：
+
+- Timestamp.FromSeconds() 此方法是根据时间戳生成 Grpc 的时间戳对象，没有特殊的地方
+- Timestamp.FromDatetime() **谨慎使用** 此方法根据 datetime 时间生成时间戳对象，**隐含期望 datetime 是 UTC 时间**，如果错误传入东八区时间，会导致得到一个 8 个小时后的绝对时间
+
+我们在实践中有混用这两个方法，最终发现调用 FromDatetime() 时获得的时间戳是完全不符合预期的。一个简单例子如下：
+
+```python
+from datetime import datetime
+from google.protobuf.timestamp_pb2 import Timestamp
+
+now = datetime.now()
+now_timestamp = int(now.timestamp())  # 1610245593
+t1 = Timestamp()
+t1.FromSeconds(now_timestamp)  # 1610245593
+
+t2 = Timestamp()
+t2.FromDatetime(now)  # 1610274393
+```
+
+可以看到通过 `FromDatetime()` 得到订单时间戳与预期是不相符的，只有传入的 datetime 是 UTC 的时间时两者才是一致的
+
+而转换为 datetime 对象的接口为：
+
+- Timestamp.ToSeconds() 此方法是根据时间戳对象得到对应的整数时间戳，没有问题
+- Timestamp.ToDatetime() **谨慎使用** 此方法是根据 grpc 的时间戳对象生成 datetime，**隐含输出的 datetime 是 UTC 时间** ，而生成的 datetime 是没有时区信息的，默认会按照本地时区进行处理，不做处理的情况下得到的就是 8 个小时前，对应的时间戳也是错误的
+
+与上面的问题类似，通过 `ToDatetime()` 得到的时间是 UTC 时间，但是由于得到的 datetime 没有指定时区，只有在 UTC 的运行环境下得到的时间才是符合预期的。
+
+## Pymongo 实践
+
+之前的在使用 Pymongo 进行数据存储时，直接使用的是 Pymongo 的默认设置，运行环境设置为东八区，在使用中直接将没有指定时区的 datetime 存入数据库中，之后再取出进行使用工作起来看起来一切正常。但是本次在梳理时区时查看数据库中存储的数据时，就发现了一个明显的问题，数据库中存储的看起来日期与时间是对的，但是是 UTC 的时间，也就是说实际存储的时间比预期晚 8 小时了，但是为什么又能正常工作呢？确认后结果如下：
+
+- Pymongo 在没有指定时区的情况下， 默认不认为此时间为本地时间，事实上认为此时间为 UTC 时间，最终会利用此时间计算得到对应的时间戳并进行存储，所以最终存储的时间戳会晚 8 小时；
+- 而在默认设置下，从 Pymongo 中返回的时间也没有时区，而时间依旧是 UTC 时间，因此会导致计算得到时间又早了 8 小时，因此时间看起来是正常的。
+
+如何才能保证存入正确时间，返回的也是符合预期的呢？
+
+- 存入的时间可以设置上对应的时区，即避免存入 naive 类型的时间，应该存入 aware 类型的时间，避免输入是认为是 UTC 的时间
+
+- 在 Pymongo 中设置输出带时区的时间，避免默认输出时间的问题，Pymongo 可以通过 `tz_aware` 指定输出带时区的时间，通过 `tzinfo` 指定输出时间的时区，这个设置在构建 Pymongo 时传入即可。对应如下：
+
+  ```python
+  from datetime import timedelta, timezone
+  
+  db = MongoClient(settings.MONGODB_DSN, tz_aware=True, tzifo=timezone(timedelta(hours=8))).get_default_database()
+  ```
+
+## 总结
+
+根据上面的的实践，分别对三个部分进行使用如下：
+
+1. datetime 的使用中，如果运行环境设置为非 UTC 时区，建议禁用 utc 相关的方法，比如 `utcnow` ，`utcfromtimestamp()` ，同时尽量避免使用 naive 使用，保证时间与运行环境解耦；
+2. grpc 的使用中尽量避免调用 `FromDatetime()` 和 `ToDatetime()`  这种包含隐含信息的方法，尽量通过时间戳与 grpc 的 TimeStamp 对象进行交互；
+3. Pymongo 中尽量传入的带有时区的时间，输出也配置上时区输出，避免隐含的问题；
+
+一条总原则就是：与第三方的服务交互或存储时，尽量只使用时间戳这种绝对机制，这样才能从根本上杜绝问题。
