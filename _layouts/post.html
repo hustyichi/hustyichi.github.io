@@ -110,7 +110,9 @@ layout: default
                 <div id="container"></div>
                 <link rel="stylesheet" href="https://imsun.github.io/gitment/style/default.css">
                 {% endif %}
-            </div>  
+
+                <div id="vcomments"></div>
+            </div>
 
     <!-- Side Catalog Container -->
         {% if page.catalog %}
@@ -173,7 +175,7 @@ layout: default
 <script src="https://img1.cache.netease.com/f2e/tie/yun/sdk/loader.js"></script>
 <script>
   var cloudTieConfig = {
-    url: document.location.href, 
+    url: document.location.href,
     sourceId: "",
     productKey: "de25fc98a6fe48b3bc8a7ae765da99a0",
     target: "cloud-tie-wrapper"
@@ -263,3 +265,12 @@ layout: default
     }
 </style>
 {% endif %}
+
+
+<script>
+    new Valine({
+        el: '#vcomments',
+        appId: '39mbuOLJS4la692mjrPuKb4W-gzGzoHsz',
+        appKey: 'tl8neqqJlftdSQvJezRcND7N'
+    })
+</script>
