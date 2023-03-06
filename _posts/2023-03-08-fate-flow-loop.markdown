@@ -127,6 +127,7 @@ def schedule_waiting_jobs(cls, job):
 ```python
 def run_do(self):
     # 默认处理所有 RUNNING 状态的 job
+
     jobs = JobSaver.query_job(is_initiator=True, status=JobStatus.RUNNING, order_by="create_time", reverse=False)
     for job in jobs:
         self.schedule_running_job(job=job, lock=True)
@@ -145,22 +146,26 @@ def schedule(cls, job, dsl_parser, canceled=False):
 
 
     # 执行所有就绪的 tasks
+
     for waiting_task in waiting_tasks:
         status_code = cls.start_task(job=job, task=waiting_task)
 
 
 def start_task(cls, job, task):
     # 申请 task 相关的资源
+
     apply_status = ResourceManager.apply_for_task_resource(task_info=task.to_human_model_dict(only_primary_with=["status"]))
     if not apply_status:
         return SchedulingStatusCode.NO_RESOURCE
 
     # 更新状态为 RUNNING , 并同步给各个站点
+
     task.f_status = TaskStatus.RUNNING
     update_status = JobSaver.update_task_status(task_info=task.to_human_model_dict(only_primary_with=["status"]))
     FederatedScheduler.sync_task_status(job=job, task=task)
 
     # 实际调用参与方执行 task
+
     status_code, response = FederatedScheduler.start_task(job=job, task=task)
 
 ```
