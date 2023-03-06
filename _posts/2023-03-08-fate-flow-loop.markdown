@@ -1,6 +1,6 @@
 ---
 layout: post
-title: 'FATE Flow 源码解析 - 作业提交流程'
+title: 'FATE Flow 源码解析 - 作业提交处理流程'
 subtitle:   "FATE Flow source code analysis - task submission process"
 date:       2023-03-08 09:30:00
 author:     "Bryan"
@@ -68,7 +68,7 @@ def submit(cls, submit_job_conf: JobConfigurationBase, job_id: str = None):
     job.f_role = job_initiator["role"]
     job.f_party_id = job_initiator["party_id"]
 
-    # 通知各个站点 (party) 去创建对应的 job
+    # 通知各个站点 (party) 去创建对应的作业 job 以及对应的任务 tasks
 
     status_code, response = FederatedScheduler.create_job(job=job)
 
@@ -83,7 +83,8 @@ def submit(cls, submit_job_conf: JobConfigurationBase, job_id: str = None):
     return submit_result
 
 ```
-可以看到提交作业时，主要是在数据库中添加作业表 Job 生成的对应的记录，并将作业的数据与状态同步给各个站点，从而实现联合的训练
+可以看到提交作业时，主要是在数据库中添加作业表 Job 生成的对应的记录，并将作业的数据与状态同步给各个站点，并根据作业 job 的信息初始化生成对应的任务 task，最终实际执行时会以任务为单位进行执行
+
 
 
 #### 资源申请
@@ -122,13 +123,132 @@ def schedule_waiting_jobs(cls, job):
 可以理解为这个阶段结束，作业执行所需的资源就已经被占用，从而保证作业的顺利执行
 
 #### 实际执行
+实际作业的执行是在 `DAGScheduler.run_do()`中完成的，处理的状态是在 RUNNING，可以看到如下所示：
+```python
+def run_do(self):
+    # 默认处理所有 RUNNING 状态的 job
+    jobs = JobSaver.query_job(is_initiator=True, status=JobStatus.RUNNING, order_by="create_time", reverse=False)
+    for job in jobs:
+        self.schedule_running_job(job=job, lock=True)
+```
+可以看到实际的作业执行是在 `schedule_running_job()` 中完成的，此方法真正的任务执行是调用 `TaskScheduler.schedule()` 完成的，对应的代码如下所示：
+
+```python
+
+def schedule(cls, job, dsl_parser, canceled=False):
+    initiator_tasks_group = JobSaver.get_tasks_asc(job_id=job.f_job_id, role=job.f_role, party_id=job.f_party_id)
+    waiting_tasks = []
+
+    for initiator_task in initiator_tasks_group.values():
+        if initiator_task.f_status == TaskStatus.WAITING:
+            waiting_tasks.append(initiator_task)
 
 
+    # 执行所有就绪的 tasks
+    for waiting_task in waiting_tasks:
+        status_code = cls.start_task(job=job, task=waiting_task)
+
+
+def start_task(cls, job, task):
+    # 申请 task 相关的资源
+    apply_status = ResourceManager.apply_for_task_resource(task_info=task.to_human_model_dict(only_primary_with=["status"]))
+    if not apply_status:
+        return SchedulingStatusCode.NO_RESOURCE
+
+    # 更新状态为 RUNNING , 并同步给各个站点
+    task.f_status = TaskStatus.RUNNING
+    update_status = JobSaver.update_task_status(task_info=task.to_human_model_dict(only_primary_with=["status"]))
+    FederatedScheduler.sync_task_status(job=job, task=task)
+
+    # 实际调用参与方执行 task
+    status_code, response = FederatedScheduler.start_task(job=job, task=task)
+
+```
+可以看到作业的执行事实上是依次获取所有就绪的任务 Task，然后执行 `start_task()` 去执行 task 做成所需完成的功能，`start_task()` 事实上就是发起一个 grpc 请求调用 `party_app.py` 中的 `/<job_id>/<component_name>/<task_id>/<task_version>/<role>/<party_id>/start` 接口完成的
+最终的任务执行是在 `TaskController.start_task()` 中完成，对应的代码如下所示：
+```python
+def start_task(cls, job_id, component_name, task_id, task_version, role, party_id, **kwargs):
+    task_info = {
+        "job_id": job_id,
+        "task_id": task_id,
+        "task_version": task_version,
+        "role": role,
+        "party_id": party_id,
+    }
+
+    # 根据 id 获取对应的任务
+
+    task = JobSaver.query_task(task_id=task_id, task_version=task_version, role=role, party_id=party_id)[0]
+
+    task_info["engine_conf"] = {"computing_engine": run_parameters.computing_engine}
+
+    # 根据执行环境选择对应的 engine，目前主要是 eggroll 和 spark，默认是 eggroll
+
+    backend_engine = build_engine(run_parameters.computing_engine)
+
+    # 实际执行对应的任务，对于 eggroll，会启动新进程执行 python/fate_flow/worker/task_executor.py 脚本
+
+    run_info = backend_engine.run(task=task,
+                                    run_parameters=run_parameters,
+                                    run_parameters_path=run_parameters_path,
+                                    config_dir=config_dir,
+                                    log_dir=job_utils.get_job_log_directory(job_id, role, party_id, component_name),
+                                    cwd_dir=job_utils.get_job_directory(job_id, role, party_id, component_name),
+                                    user_name=kwargs.get("user_id"))
+
+    # 更新 task 相关的执行情况，执行正常的情况下状态为 RUNNING
+
+    task_info.update(run_info)
+    task_info["start_time"] = current_timestamp()
+
+    cls.update_task(task_info=task_info)
+    task_info["party_status"] = TaskStatus.RUNNING
+    cls.update_task_status(task_info=task_info)
+
+```
+简单理解任务 Task 最终只是根据作业在独立进程中完成特定命令的执行，最终作业就是一系列任务的执行的组合。当所有任务完成时，作业也就完成了
 
 
 #### 进度更新
+前面提到作业 job 的执行事实上仅仅是一系列对应的任务 task 的执行，因此 FATE-Flow 的进度更新也是根据任务 task 的完成的数量占所有 task 的数量来确定的。具体的代码如下：
+```python
+def schedule_running_job(cls, job: Job, force_sync_status=False):
+    # 调度 job 进行执行
 
+    task_scheduling_status_code, auto_rerun_tasks, tasks = TaskScheduler.schedule(job=job, dsl_parser=dsl_parser, canceled=job.f_cancel_signal)
 
+    # 更新 job 执行的进度以及状态
+
+    tasks_status = dict([(task.f_component_name, task.f_status) for task in tasks])
+    new_job_status = cls.calculate_job_status(task_scheduling_status_code=task_scheduling_status_code, tasks_status=tasks_status.values())
+
+    # 根据 job 中已完成 task 的数量与总 task 的数量确定完成的进度
+
+    total, finished_count = cls.calculate_job_progress(tasks_status=tasks_status)
+    new_progress = float(finished_count) / total * 100
+
+    if new_job_status != job.f_status or new_progress != job.f_progress:
+        # 通知参与方更新 job 执行的进度信息
+
+        if int(new_progress) - job.f_progress > 0:
+            job.f_progress = new_progress
+            FederatedScheduler.sync_job(job=job, update_fields=["progress"])
+            cls.update_job_on_initiator(initiator_job=job, update_fields=["progress"])
+
+        # 有状态变化时通知相关方更新 job 状态信息
+
+        if new_job_status != job.f_status:
+            job.f_status = new_job_status
+            FederatedScheduler.sync_job_status(job=job)
+            cls.update_job_on_initiator(initiator_job=job, update_fields=["status"])
+
+    # 处理结束，执行必要资源回收
+
+    if EndStatus.contains(job.f_status):
+        cls.finish(job=job, end_status=job.f_status)
+```
+可以看到最终就是调用 `calculate_job_progress()` 计算特定作业 job 中 task 完成的数量，最终确定完成的进度。当处理结束时，执行必要的资源回收
 
 
 ## 总结
+本文对 FATE-Flow 的作业的完整执行流程进行了梳理，为了简化删除了大量异常分支的处理，有兴趣的可以结合实际的 FATE-Flow v1.10.0 的源码进行查看，应该会更有裨益
