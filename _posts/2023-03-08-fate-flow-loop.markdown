@@ -16,11 +16,12 @@ tags:
 
 Fate 是隐私计算中最有名的开源项目了，从 star 的数量上来看也可以看出来。截止 2023 年 3 月共收获 4.9k 个 star，但是 Fate 一直被认为代码框架复杂，难以理解，作为一个相关的从业者，后续会持续对 Fate 项目的源码进行解析，方便对隐私计算感兴趣的后来者提供一点点帮助。
 
-本文主要基于 FATE-Flow 2022 年 12 月发布的版本 v1.10.0，后续的版本可能略有差异。针对 FATE-Flow 的代码，基于 v1.10.0 的做了一个代码注解的仓库，方便查看具体的代码 [https://github.com/hustyichi/hustyichi.github.io](https://github.com/hustyichi/hustyichi.github.io)
+本文主要基于 FATE-Flow 2022 年 12 月发布的版本 v1.10.0，后续的版本可能略有差异。针对 FATE-Flow 的代码，基于 v1.10.0 的做了一个代码注解的仓库，方便查看具体的代码 [https://github.com/hustyichi/FATE-Flow](https://github.com/hustyichi/FATE-Flow)
 
 ## Fate-Flow 基础介绍
 
-Fate-Flow 是 Fate 项目的重要组成部分，主要用于实现作业的调度，简单理解，我们提交的训练作业会提交给 Fate-Flow，Fate-Flow 会创建对应的作业，并生成多个对应任务，统一进行调度，通过联合多个站点一起进行训练，最终生成对应的结果
+FATE-Flow 是 Fate 项目的重要组成部分，主要用于实现作业的调度，整体的设计可以查看 [官方文档](https://federatedai.github.io/FATE-Flow/latest/zh/fate_flow/)
+FATE 中提交的训练作业会提交给 Fate-Flow，由 FATE-Flow 统一进行调度执行，最终生成所需训练结果
 
 Fate-Flow 是作为一个 Web 服务对外提供服务的，对应的初始启动文件为 `FATE-Flow/python/fate_flow/fate_flow_server.py` ，熟悉 flask 的可以看到，最终就是调用 `run_simple` 创建了一个 Web 服务，根据 app 可以找到 Web 服务的主要代码都在 `FATE-Flow/python/fate_flow/apps` 目录下，路由注册的代码如下所示：
 
@@ -37,9 +38,9 @@ scheduling_urls_prefix = [
 ]
 ```
 
-可以看到注册的路由主要就是 apps 目录与 scheduling_apps 目录下路由。
+可以看到注册的路由主要就是 apps 目录与 scheduling_apps 目录下的路由。
 
-一个注意点是：FATE-Flow 是没办法独立运行的，需要作为 FATE 的一部分进行运行。 FATE-Flow 项目部分依赖的代码，比如 `fate_arch` 是存在于 Fate 工程下，对应的路径为 `FATE/python/fate_arch` ，找不到代码时可以联合 Fate 代码仓库进行阅读
+一个注意点：FATE-Flow 是没办法独立运行的，需要作为 FATE 的一部分执行。 FATE-Flow 项目部分依赖的代码，比如 `fate_arch` 是存在于 Fate 工程下，对应的路径为 `FATE/python/fate_arch` ，找不到代码时可以联合 Fate 代码仓库进行阅读
 
 ## 作业处理流程
 作为一个作业调度的服务，最重要的就是完整的处理流程，先厘清这个主线，其他分支就更容易理解了，主要流程如下所示：
@@ -83,7 +84,7 @@ def submit(cls, submit_job_conf: JobConfigurationBase, job_id: str = None):
     return submit_result
 
 ```
-可以看到提交作业时，主要是在数据库中添加作业表 Job 生成的对应的记录，并将作业的数据与状态同步给各个站点，并根据作业 job 的信息初始化生成对应的任务 task，最终实际执行时会以任务为单位进行执行
+可以看到提交作业时，主要是在数据库中的作业表 Job 生成对应的记录，并将作业的数据与状态同步给各个站点，并根据作业 job 的信息初始化生成对应的任务 task，最终实际执行时是以任务为单位进行的
 
 
 
@@ -120,7 +121,7 @@ def schedule_waiting_jobs(cls, job):
 
 ```
 在此阶段，会申请作业执行所需的资源，资源申请时会调用依次调用各个站点对应的接口，分配必要的 CPU 与内存资源，对应的接口为 `FATE-Flow/python/fate_flow/scheduling_apps/party_app.py` 中的 `/<job_id>/<role>/<party_id>/resource/apply` 接口，最终调用 `FATE-Flow/python/fate_flow/manager/resource_manager.py` 中的 `resource_for_job()` 方法执行资源的获取，此时会基于数据库表 `EngineRegistry` 去做资源的动态分配限制。具体的分配策略的实现后续专门介绍，这边就不具体展开了。
-可以理解为这个阶段结束，作业执行所需的资源就已经被占用，从而保证作业的顺利执行
+可以理解为这个阶段结束，作业执行所需的资源就已经被占用，从而保证后续作业的顺利执行
 
 #### 实际执行
 实际作业的执行是在 `DAGScheduler.run_do()`中完成的，处理的状态是在 RUNNING，可以看到如下所示：
@@ -132,13 +133,15 @@ def run_do(self):
     for job in jobs:
         self.schedule_running_job(job=job, lock=True)
 ```
-可以看到实际的作业执行是在 `schedule_running_job()` 中完成的，此方法真正的任务执行是调用 `TaskScheduler.schedule()` 完成的，对应的代码如下所示：
+可以看到实际的作业执行是在 `schedule_running_job()` 中完成的，此方法真正的任务执行是通过调用 `TaskScheduler.schedule()` 完成的，对应的代码如下所示：
 
 ```python
 
 def schedule(cls, job, dsl_parser, canceled=False):
     initiator_tasks_group = JobSaver.get_tasks_asc(job_id=job.f_job_id, role=job.f_role, party_id=job.f_party_id)
     waiting_tasks = []
+
+    # 获取就绪的 tasks
 
     for initiator_task in initiator_tasks_group.values():
         if initiator_task.f_status == TaskStatus.WAITING:
@@ -169,8 +172,8 @@ def start_task(cls, job, task):
     status_code, response = FederatedScheduler.start_task(job=job, task=task)
 
 ```
-可以看到作业的执行事实上是依次获取所有就绪的任务 Task，然后执行 `start_task()` 去执行 task 做成所需完成的功能，`start_task()` 事实上就是发起一个 grpc 请求调用 `party_app.py` 中的 `/<job_id>/<component_name>/<task_id>/<task_version>/<role>/<party_id>/start` 接口完成的
-最终的任务执行是在 `TaskController.start_task()` 中完成，对应的代码如下所示：
+可以看到作业的执行事实上是依次获取所有就绪的任务 Task，然后执行 `FederatedScheduler.start_task()` 去执行 task 做成所需完成的功能，而 `FederatedScheduler.start_task()` 事实上就是发起一次请求调用 `party_app.py` 中的 `/<job_id>/<component_name>/<task_id>/<task_version>/<role>/<party_id>/start` 接口完成的
+实际的任务执行是在 `TaskController.start_task()` 中完成，对应的代码如下所示：
 ```python
 def start_task(cls, job_id, component_name, task_id, task_version, role, party_id, **kwargs):
     task_info = {
@@ -252,7 +255,8 @@ def schedule_running_job(cls, job: Job, force_sync_status=False):
     if EndStatus.contains(job.f_status):
         cls.finish(job=job, end_status=job.f_status)
 ```
-可以看到最终就是调用 `calculate_job_progress()` 计算特定作业 job 中 task 完成的数量，最终确定完成的进度。当处理结束时，执行必要的资源回收
+可以看到最终就是调用 `calculate_job_progress()` 计算特定作业 job 中任务 task 完成的数量，最终确定完成的进度。
+所有的处理处理结束时，调用 `finish()` 执行必要的资源回收
 
 
 ## 总结
