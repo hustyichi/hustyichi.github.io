@@ -87,9 +87,39 @@ def submit(cls, submit_job_conf: JobConfigurationBase, job_id: str = None):
 
 
 #### 资源申请
+提交后作业的状态变为 WAITING，在 `DAGScheduler.run_do()` 对 WAITING 状态的作业进行了处理，可以看到如下所示：
+```python
+def run_do(self):
 
+    # 默认处理 WAITING 状态的第一个创建的 job 进行处理，会分配必要的资源，处理结束状态变为 RUNNING
 
+    jobs = JobSaver.query_job(is_initiator=True, status=JobStatus.WAITING, order_by="create_time", reverse=False)
+    if len(jobs):
+        job = jobs[0]
+        self.schedule_waiting_jobs(job=job, lock=True)
+```
+可以看到实际处理的方法是 schedule_waiting_jobs() 方法，对应的代码如下所示：
+```python
+def schedule_waiting_jobs(cls, job):
+    job_id, initiator_role, initiator_party_id, = job.f_job_id, job.f_initiator_role, job.f_initiator_party_id,
 
+    # 检查资源依赖关系
+
+    dependence_status_code, federated_dependence_response = FederatedScheduler.dependence_for_job(job=job)
+    if dependence_status_code == FederatedSchedulingStatusCode.SUCCESS:
+
+        # 申请相关资源
+
+        apply_status_code, federated_response = FederatedScheduler.resource_for_job(job=job, operation_type=ResourceOperation.APPLY)
+        if apply_status_code == FederatedSchedulingStatusCode.SUCCESS:
+
+            # 启动 job 执行，状态更新至 RUNNING
+
+            cls.start_job(job_id=job_id, initiator_role=initiator_role, initiator_party_id=initiator_party_id)
+
+```
+在此阶段，会申请作业执行所需的资源，资源申请时会调用依次调用各个站点对应的接口，分配必要的 CPU 与内存资源，对应的接口为 `FATE-Flow/python/fate_flow/scheduling_apps/party_app.py` 中的 `/<job_id>/<role>/<party_id>/resource/apply` 接口，最终调用 `FATE-Flow/python/fate_flow/manager/resource_manager.py` 中的 `resource_for_job()` 方法执行资源的获取，此时会基于数据库表 `EngineRegistry` 去做资源的动态分配限制。具体的分配策略的实现后续专门介绍，这边就不具体展开了。
+可以理解为这个阶段结束，作业执行所需的资源就已经被占用，从而保证作业的顺利执行
 
 #### 实际执行
 
