@@ -26,6 +26,7 @@ Fate-Flow 是作为一个 Web 服务对外提供服务的，对应的初始启�
 
 ```python
 # 注册 HTTP 路由，将 Fate-Flow/python/fate_flow/apps 以及 Fate-Flow/python/fate_flow/scheduling_apps 下所有 python 文件
+
 client_urls_prefix = [
     register_page(path)
     for path in search_pages_path(Path(__file__).parent)
@@ -49,6 +50,7 @@ scheduling_urls_prefix = [
 
 def submit(cls, submit_job_conf: JobConfigurationBase, job_id: str = None):
     # 没有 id 时默认生成唯一 id
+
     if not job_id:
         job_id = job_utils.generate_job_id()
 
@@ -67,12 +69,15 @@ def submit(cls, submit_job_conf: JobConfigurationBase, job_id: str = None):
     job.f_party_id = job_initiator["party_id"]
 
     # 通知各个站点 (party) 去创建对应的 job
+
     status_code, response = FederatedScheduler.create_job(job=job)
 
     # 更新 job 状态为 WAITING
+
     job.f_status = JobStatus.WAITING
 
     # 将 job 状态同步给各个站点（party）
+
     status_code, response = FederatedScheduler.sync_job_status(job=job)
 
     return submit_result
