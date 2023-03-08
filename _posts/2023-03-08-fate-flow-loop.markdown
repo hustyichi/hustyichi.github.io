@@ -105,7 +105,7 @@ def run_do(self):
 def schedule_waiting_jobs(cls, job):
     job_id, initiator_role, initiator_party_id, = job.f_job_id, job.f_initiator_role, job.f_initiator_party_id,
 
-    # 检查资源依赖关系
+    # 检查作业的前置依赖关系
 
     dependence_status_code, federated_dependence_response = FederatedScheduler.dependence_for_job(job=job)
     if dependence_status_code == FederatedSchedulingStatusCode.SUCCESS:
