@@ -100,3 +100,62 @@ def register_engine(cls, engine_type, engine_name, engine_entrance, engine_confi
 
 可以看到，对应的资源注册仅仅是在数据库中的表 `EngineRegistry` 中生成对应的记录，后续的分配也是基于 `EngineRegistry` 进行对应的扣减即可
 
+#### 资源申请与释放
+
+梳理资源的申请与释放流程时，先来看看作业的资源申请与释放
+
+**作业资源申请**
+
+作业的资源申请是通过调用 `FederatedScheduler.resource_for_job()` 方法实现的，此时会依次调用各个站点对应的 `/<job_id>/<role>/<party_id>/resource/apply` 接口，此接口会调用 `resource_manager.py` 中的 `apply_for_job_resource()`, 此方法会调用 `resource_for_job()` 方法，申请资源时会将资源从公共的资源池 `EngineRegistry` 分配至作业表 `Job` 上。具体的实现如下所示：
+
+```python
+
+# 计算作业所需的资源
+
+engine_name, cores, memory = cls.calculate_job_resource(job_id=job_id, role=role, party_id=party_id)
+
+# 在 Job 表中增加实际使用的资源，其中 f_cores 表示实际申请的 CPU 资源，f_memory 表示实际申请的内存资源
+
+updates = {
+    Job.f_engine_type: EngineType.COMPUTING,
+    Job.f_engine_name: engine_name,
+    Job.f_cores: cores,
+    Job.f_memory: memory,
+}
+filters = [
+    Job.f_job_id == job_id,
+    Job.f_role == role,
+    Job.f_party_id == party_id,
+]
+
+# 其中 f_remaining_cores 表示 Job 中剩余的 CPU 资源，f_remaining_memory 表示 Job 中剩余的内存资源，后续 Task 就是从 Job 中申请资源
+
+updates[Job.f_remaining_cores] = cores
+updates[Job.f_remaining_memory] = memory
+
+# f_resource_in_use 表示实际占用资源的标记
+
+updates[Job.f_resource_in_use] = True
+updates[Job.f_apply_resource_time] = base_utils.current_timestamp()
+operate = Job.update(updates).where(*filters)
+
+
+# 在 EngineRegistry 减少对应的资源，利用 filter 避免资源超出可用资源 f_remaining_cores，f_remaining_memory
+
+filters = [
+    resource_model.f_remaining_cores >= cores,
+    resource_model.f_remaining_memory >= memory
+]
+updates = {resource_model.f_remaining_cores: resource_model.f_remaining_cores - cores,
+            resource_model.f_remaining_memory: resource_model.f_remaining_memory - memory}
+filters.append(EngineRegistry.f_engine_type == EngineType.COMPUTING)
+filters.append(EngineRegistry.f_engine_name == engine_name)
+operate = EngineRegistry.update(updates).where(*filters)
+
+```
+
+可以看到的实际的逻辑其实很简单，就是从 `EngineRegistry` 扣减对应的资源 cores, memory, 在 `Job` 表中增加对应的资源。
+
+**作业资源释放**
+
+作业资源的释放与申请是完全相反的，此时会将 `Job` 表中的 `f_resource_in_use` 标记设置为 False，同时在资源池表 `EngineRegistry` 增加对应的资源，实现的代码基本上是申请代码的反向操作，就不过多展示原始代码了
