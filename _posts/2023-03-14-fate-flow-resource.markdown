@@ -13,41 +13,39 @@ tags:
 ---
 
 ## 背景介绍
-在 [上一篇文章](https://hustyichi.github.io/2023/03/08/fate-flow-loop/) 中介绍了 FATE 的作业处理流程，对于资源管理没有深入介绍，本篇文章就是来补充相关细节
-众所周知，FATE 是一个联邦学习框架，涉及了多个参与方进行模型的训练，而各个参与方的训练过程都需要使用 CPU 资源和内存资源，因此在作业执行前需要提前先申请好必要的资源，才能避免在执行中避免因为资源不足而导致执行失败。
-而 FATE 中单个作业会包含多个任务，每个任务需要独立使用一定量的资源，因此任务会有独立的资源申请与释放资源的流程
+在 [上一篇文章](https://hustyichi.github.io/2023/03/08/fate-flow-loop/) 中介绍了 FATE 的作业处理流程，对于资源管理没有深入介绍，本篇文章就是来补充相关细节。
+
+众所周知，FATE 是一个联邦学习框架，涉及了多个参与方（FATE 中叫站点）进行模型的训练，而各个参与方的训练过程都需要使用 CPU 资源和内存资源，因此在作业执行前需要提前先申请好必要的资源，才能避免在执行中避免因为资源不足而导致执行失败。
+而 FATE 中单个作业会包含多个任务，每个任务需要独立使用一定量的资源，因此任务会有独立的资源申请与释放资源的流程。
+
+本文主要基于 FATE-Flow 2022 年 12 月发布的版本 v1.10.0，后续的版本可能略有差异。针对 FATE-Flow 的代码，基于 v1.10.0 的做了一个代码注解的仓库，方便查看具体的代码 https://github.com/hustyichi/FATE-Flow ，可以查看相关代码查看详细实现
 
 ## 资源分配相关流程
 在资源的管理中，主要涉及两部分:
-1. 资源初始化，在 Fate-Flow 初始化时，根据配置文件初始化对应的资源信息，确定了服务中可供分配的资源总量，这部分是在 `fate_flow_server.py` 中实现，调用链路如下： ConfigManager.load() -> ResourceManager.initialize()
-2. 作业的资源申请与释放，会涉及到作业与任务的资源申请与释放。具体的流程如下：
+1. 资源初始化，在 Fate-Flow 初始化时，根据配置文件初始化对应的资源信息，确定了服务中可供分配的资源总量，这部分是在 `fate_flow_server.py` 中实现，调用链路如下： `ConfigManager.load() -> ResourceManager.initialize()`
+2. 作业流程的资源申请与释放，其中包括作业本身的资源申请与释放，同时也会包含任务的资源申请与释放。具体的流程如下：
 
     - 作业资源申请是在 `dag_scheduler.py` 中 `schedule_waiting_jobs()` 中调用 `FederatedScheduler.resource_for_job()` 完成
     - 作业资源释放是在 `job_controller.py` 中调用 `update_job_status()` 时，如果状态处于完成状态，此时会调用 `ResourceManager.return_job_resource()` 释放作业对应的资源
-    - 任务资源申请是在 `dag_scheduler.py` 中完成，调用链路如下： schedule_running_job() ->  TaskScheduler.schedule() -> TaskScheduler.start_task() -> ResourceManager.apply_for_task_resource()
+    - 任务资源申请是在 `dag_scheduler.py` 中完成，调用链路如下： `schedule_running_job() ->  TaskScheduler.schedule() -> TaskScheduler.start_task() -> ResourceManager.apply_for_task_resource()`
     - 任务资源释放是在任务状态更新时调用 `task_controller.py` 中调用 `update_task_status()` 时，如果状态处于完成状态，此时会调用 `ResourceManager.return_task_resource()` 释放资源
 
 
 ## 资源分配源码解析
 
 #### 资源初始化
-资源的初始化是在 `ResourceManager.initialize()` 实现，可以看到对应的代码如下所示：
-
-```python
-def initialize(cls):
-    engines_config, engine_group_map = engine_utils.get_engines_config_from_conf(group_map=True)
-    for engine_type, engine_configs in engines_config.items():
-        for engine_name, engine_config in engine_configs.items():
-            cls.register_engine(engine_type=engine_type, engine_name=engine_name, engine_entrance=engine_group_map[engine_type][engine_name], engine_config=engine_config)
-```
-
-通过依次对各种类型的资源调用 `ResourceManager.register_engine()` 进行注册，具体的注册实现代码如下所示：
+资源的初始化是在 `ResourceManager.initialize()` 实现，依次对各种类型的资源调用 `register_engine()` 进行注册，其中注册的具体实现如下所示：
 
 ```python
 def register_engine(cls, engine_type, engine_name, engine_entrance, engine_config):
+    # 获取对应的资源信息，cores 为 CPU 资源，memory 为内存资源
+
     nodes = engine_config.get("nodes", 1)
     cores = engine_config.get("cores_per_node", 0) * nodes * JobDefaultConfig.total_cores_overweight_percent
     memory = engine_config.get("memory_per_node", 0) * nodes * JobDefaultConfig.total_memory_overweight_percent
+
+    # 确认当前类型的资源是否已经注册过，如果注册过需要进行更新
+
     filters = [EngineRegistry.f_engine_type == engine_type, EngineRegistry.f_engine_name == engine_name]
     resources = EngineRegistry.select().where(*filters)
 
@@ -137,6 +135,10 @@ updates[Job.f_remaining_memory] = memory
 
 updates[Job.f_resource_in_use] = True
 updates[Job.f_apply_resource_time] = base_utils.current_timestamp()
+
+# 使用 f_resource_in_use 过滤避免资源重复申请
+
+filters.append(Job.f_resource_in_use == False)
 operate = Job.update(updates).where(*filters)
 
 
@@ -169,7 +171,7 @@ operate = EngineRegistry.update(updates).where(*filters)
 
 cores_per_task, memory_per_task = cls.calculate_task_resource(task_info=task_info)
 
-# task 的资源操作都是在 Job 表完成的, job 的资源申请是从 EngineRegistry 分配至 Job 表，task 的资源使用时在对应的 job 上完成
+# task 的资源操作都是在 Job 表完成的, job 的资源申请是从 EngineRegistry 分配至 Job 表，task 的资源使用是在对应的 job 上完成
 
 filters = [
         resource_model.f_remaining_cores >= cores,
@@ -195,6 +197,6 @@ operate_status = operate.execute() > 0
 
 ## 总结
 
-FATE Flow 的资源分配机制还是比较简单的，在初始化时通过配置文件指定站点可用的资源，调用 `ResourceManager.initialize()` 初始化对应的资源，将可用的资源信息保存至表 `EngineRegistry` 上，作业资源的申请是从 `EngineRegistry` 表分配至 `Job` 表，即从 `EngineRegistry` 表扣减对应的资源，从 `Job` 表增加对应的资源，而任务资源的申请是从 `Job` 表扣减对应的资源
+FATE Flow 的资源分配机制还是比较简单的，在初始化时通过配置文件指定站点可用的资源，调用 `ResourceManager.initialize()` 初始化对应的资源，将可用的资源信息保存至表 `EngineRegistry` 上，作业资源的申请是从 `EngineRegistry` 表分配至 `Job` 表，即从 `EngineRegistry` 表扣减对应的资源，从 `Job` 表增加对应的资源，而任务资源的申请是从 `Job` 表扣减对应的资源，资源的释放就是简单的反向 sql 操作
 
-整体的方案相对简单，而且借助 sql 的更新机制鲁棒性相对较高。但是资源的消耗量都是按照配置计算得到的，按照标准化单位计数，并非实际的资源消耗，因此配置不当可能会导致超过可用资源上限从而出现问题。
+整体的方案相对简单，而且借助 sql 的更新机制鲁棒性相对较高。但是资源的消耗量都是按照配置计算得到的，按照标准化单位计数，并非实际的资源消耗，因此配置不当可能会导致超过可用资源上限从而出现问题，可以将其理解为一个限制同时执行的作业训练数量的简单机制，大部分的业务情况也足够了
