@@ -159,3 +159,42 @@ operate = EngineRegistry.update(updates).where(*filters)
 **作业资源释放**
 
 作业资源的释放与申请是完全相反的，此时会将 `Job` 表中的 `f_resource_in_use` 标记设置为 False，同时在资源池表 `EngineRegistry` 增加对应的资源，实现的代码基本上是申请代码的反向操作，就不过多展示原始代码了
+
+**任务资源申请**
+
+根据前面提到的任务资源的申请流程，最终任务的资源申请是通过调用 `resource_manger.py` 中的 `apply_for_task_resource()` 方法完成的，此方法调用 `resource_for_task()` 方法来完成任务资源分配，对应的实现如下：
+
+```python
+# 计算 task 占用的资源
+
+cores_per_task, memory_per_task = cls.calculate_task_resource(task_info=task_info)
+
+# task 的资源操作都是在 Job 表完成的, job 的资源申请是从 EngineRegistry 分配至 Job 表，task 的资源使用时在对应的 job 上完成
+
+filters = [
+        resource_model.f_remaining_cores >= cores,
+        resource_model.f_remaining_memory >= memory
+]
+updates = {resource_model.f_remaining_cores: resource_model.f_remaining_cores - cores,
+            resource_model.f_remaining_memory: resource_model.f_remaining_memory - memory}
+filters.append(Job.f_job_id == task_info["job_id"])
+filters.append(Job.f_role == task_info["role"])
+filters.append(Job.f_party_id == task_info["party_id"])
+filters.append(Job.f_resource_in_use == True)
+operate = Job.update(updates).where(*filters)
+operate_status = operate.execute() > 0
+
+```
+
+可以看到资源的申请就是消耗 Job 表中 `f_remaining_cores` 和 `f_remaining_memory` 中的剩余的 CPU 和内存资源
+
+**任务资源释放**
+
+任务资源释放与任务资源的申请基本相反，是在 `Job` 中增加可用资源，没有其他特殊操作，因此也就不粘贴原始代码了
+
+
+## 总结
+
+FATE Flow 的资源分配机制还是比较简单的，在初始化时通过配置文件指定站点可用的资源，调用 `ResourceManager.initialize()` 初始化对应的资源，将可用的资源信息保存至表 `EngineRegistry` 上，作业资源的申请是从 `EngineRegistry` 表分配至 `Job` 表，即从 `EngineRegistry` 表扣减对应的资源，从 `Job` 表增加对应的资源，而任务资源的申请是从 `Job` 表扣减对应的资源
+
+整体的方案相对简单，而且借助 sql 的更新机制鲁棒性相对较高。但是资源的消耗量都是按照配置计算得到的，按照标准化单位计数，并非实际的资源消耗，因此配置不当可能会导致超过可用资源上限从而出现问题。
