@@ -226,3 +226,82 @@ def get_job_logger(job_id, log_type):
 
 可以看到实现原理也是类似的，就是创建对应日志实例 logger，并生成对应的 handler，从而输出至特定文件中
 
+job 中日志还有一部分的日志对应一个独立的目录 guest/host ，这部分是按照 job 中训练中参与的角色为单位输出的日志，这些日志是如何被写入文件中的呢？
+
+对应的代码在 `fate_flow/controller/task_controller.py` 中的 `start_task()` 方法，可以看到 task 实际执行的代码如下所示：
+
+```python
+backend_engine = build_engine(run_parameters.computing_engine)
+
+# task 执行中对应的日志输出至 get_job_log_directory() 指定的 logs/{job_id}/{role}/{party_id}/{component_name} 对应的目录
+
+run_info = backend_engine.run(task=task,
+                                run_parameters=run_parameters,
+                                run_parameters_path=run_parameters_path,
+                                config_dir=config_dir,
+                                log_dir=job_utils.get_job_log_directory(job_id, role, party_id, component_name),
+                                cwd_dir=job_utils.get_job_directory(job_id, role, party_id, component_name),
+                                user_name=kwargs.get("user_id"))
+```
+
+由于不同的执行环境代码不同，我们以 eggroll 为例去查看对应的 `run()` 执行情况，其最终执行 `WorkerManager.start_task_worker()` 方法，其最终会在开启新进程处理任务时，将日志目录通过 `log_dir` 传入，代码如下所示：
+
+```python
+   def start_task_worker(cls, worker_name, task: Task, task_parameters: RunParameters = None,
+                          executable: list = None, extra_env: dict = None, **kwargs):
+        # 根据 task 执行情况确定最终日志输出的目录 log_dir, 最终使用 logs/{job_id}/{role}/{party_id}/{component_name} 为日志目录
+
+        worker_id, config_dir, log_dir = cls.get_process_dirs(worker_name=worker_name,
+                                                              job_id=task.f_job_id,
+                                                              role=task.f_role,
+                                                              party_id=task.f_party_id,
+                                                              task=task)
+
+        # 实际执行的代码对应的文件
+
+        from fate_flow.worker.task_executor import TaskExecutor
+        module_file_path = sys.modules[TaskExecutor.__module__].__file__
+
+        # 实际执行进程，使用 python 执行对应的代码
+
+        env = cls.get_env(task.f_job_id, task.f_provider_info)
+        if executable:
+            process_cmd = executable
+        else:
+            process_cmd = [env.get("PYTHON_ENV") or sys.executable or "python3"]
+
+        # 执行命令行，通过 log_dir 指定了对应的日志目录
+
+        common_cmd = [
+            module_file_path,
+            "--job_id", task.f_job_id,
+            "--component_name", task.f_component_name,
+            "--task_id", task.f_task_id,
+            "--task_version", task.f_task_version,
+            "--role", task.f_role,
+            "--party_id", task.f_party_id,
+            "--config", config_path,
+            '--result', result_path,
+            "--log_dir", log_dir,
+            "--parent_log_dir", os.path.dirname(log_dir),
+            "--worker_id", worker_id,
+            "--run_ip", RuntimeConfig.JOB_SERVER_HOST,
+            "--run_port", RuntimeConfig.HTTP_PORT,
+            "--job_server", f"{RuntimeConfig.JOB_SERVER_HOST}:{RuntimeConfig.HTTP_PORT}",
+            "--session_id", session_id,
+            "--federation_session_id", federation_session_id
+        ]
+        process_cmd.extend(common_cmd)
+
+        # 启动新进程执行对应的命令
+
+        p = process_utils.run_subprocess(job_id=task.f_job_id, config_dir=config_dir, process_cmd=process_cmd,
+                                         added_env=env, log_dir=log_dir, cwd_dir=config_dir, process_name=worker_name.value,
+                                         process_id=worker_id)
+        return {"run_pid": p.pid, "worker_id": worker_id, "cmd": process_cmd}
+```
+
+而使用使用 `log_dir` 是在 `fate_flow/worker/base_worker.py` 中实际中，会调用 `LoggerFactory.set_directory()` 指定日志输出的父目录，后续即可将任务相关的日志输出至特定目录中进行搜集了
+
+## 总结
+这边介绍了 FATE-Flow 相关的日志存储情况，相对大部分服务而言，FATE-Flow 中的日志存储都属于比较复杂的了，但是借助 logging 中动态的 Handler 更新机制，可以比较方便地不同模块独立的日志输出能力，有兴趣的也可以进一步使用下
