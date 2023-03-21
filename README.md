@@ -7,4 +7,5 @@
 
 - [FATE-Flow 提交处理主流程](https://hustyichi.github.io/2023/03/08/fate-flow-loop/)
 - [FATE-Flow 资源分配机制](https://hustyichi.github.io/2023/03/14/fate-flow-resource/)
+- [FATE-Flow 日志输出机制](https://hustyichi.github.io/2023/03/21/logger-in-fate/)
 
