@@ -1,7 +1,7 @@
 ---
 layout: post
-title: 'Fate Board 执行流程探索'
-subtitle:   "Fate Board Execution Process Exploration"
+title: 'FATE Board 执行流程探索'
+subtitle:   "FATE Board Execution Process Exploration"
 date:       2023-08-23 09:00:00
 author:     "Bryan"
 header-mask: 0.3
