@@ -21,21 +21,41 @@ FATE Board 是 FATE 提供的一个工程，用于给 FATE 提供可视化能力
 FATE Board 代码地址为 [https://github.com/FederatedAI/FATE-Board](https://github.com/FederatedAI/FATE-Board), 本文的探索基于 v1.11.1，后续版本可能有所不同
 
 ## FATE Board 实现探索
-FATE Board 工程中包含前端与后端的实现，前端是基于 Vue 实现的，后端则是基于 Java 实现。本文在探索时主要基于两个场景串联了一下完整的流程，分别是主页面的 job 列表页，以及 job 日志详情，整体流程不算复杂。
+FATE Board 工程中包含前端与后端的实现，前端是基于 Vue 实现的，后端则是基于 Java 实现。本文在探索时主要基于两个场景串联了一下完整的流程，分别是主页面的 job 列表页，以及 job 日志详情，通过查看完整的调用链路，对 FATE Board 建立整体的认识。
 
 #### Job 列表页
 
 ![app](/img/in-post/fate-board/list.png)
 
-查看 Job 列表页通过 Chrome 调试模式查看对应的请求，即可比较容易发现对应的请求为 `/job/query/page/new` , 通过对应的接口信息即可轻松发现后端的实现路径为 `src/main/java/com/webank/ai/fate/board/controller/JobManagerController.java` 中的 `queryPagedJob()` 方法，简单跳转后可以看到对应的真正的内容获取为：
+查看 Job 列表页通过 Chrome 调试模式查看对应的请求，即可比较容易发现对应的请求为 `/job/query/page/new` , 通过对应的接口路径全局搜索可以发现后端的实现为 `src/main/java/com/webank/ai/fate/board/controller/JobManagerController.java` 中的 `queryPagedJob()` 方法，对应的代码实现如下：
+
+```java
+public PageBean<Map<String, Object>> queryPagedJobs(PagedJobQO pagedJobQO) {
+    String jobId = pagedJobQO.getJobId();
+    FlowJobQO flowJobQO = new FlowJobQO();
+    if (jobId != null && 0 != jobId.trim().length()) {
+        flowJobQO.setJob_id(pagedJobQO.getJobId());
+    }
+
+    // 构造请求参数 ...
+
+    // 实际获取数据
+    Map<String, Object> jobMap = getJobMap(flowJobQO);
+
+    // ... 冗长的业务处理
+}
+```
+
+可以看到的真正的数据获取部分基本就是直接调用 `getJobMap()` ，对应的实现如下所示：
 
 ```java
 private Map<String, Object> getJobMap(Object query) {
     result = flowFeign.post(Dict.URL_JOB_QUERY, JSON.toJSONString(query));
+
+    // ... 冗长的结果转换
 }
 ```
-最终只是一层简单的转发，对应的地址为 `/v1/job/list/job`，追踪至 FATE Flow Server 中看到了对应的实现，处于路径 `FATE-Flow/python/fate_flow/apps/job_app.py` 中的 `list_job()`，最终的在 FATE Flow Server 中仅仅做了必要的数据库查询，最终返回了结果
-
+实际的获取是通过一次 HTTP 请求获取到，对应的请求地址为 `/v1/job/list/job`，看情况应该是调用 FATE Flow Server 获取的，在 FATE-Flow 中看到的对应的接口，处于路径 `FATE-Flow/python/fate_flow/apps/job_app.py` 中的 `list_job()`，实际的实现就是一次简单的数据库查询，不再进一步展开。
 
 #### Job 日志
 
@@ -115,4 +135,33 @@ public interface FlowLogFeign {
 
 ```
 
-最后兜了一圈，看起来还是转换了一次网络请求，看起来还是发送给了 FATE Flow Server
+最后兜了一圈，看起来还是转换了一次网络请求，看起来还是发送给了 FATE Flow Server，追踪 FATE-Flow 工程中的对应实现，可以看到对应的网络请求位于 `FATE-Flow/python/fate_flow/apps/log_app.py` 路径下，具体的实现位于 `FATE-Flow/python/fate_flow/utils/log_sharing_utils.py` 中的 `cat_log()` 方法中，实现如下：
+
+```python
+def cat_log(self, begin, end):
+    line_list = []
+    log_path = self.get_log_file_path()
+    if begin and end:
+        cmd = f"cat {log_path} | tail -n +{begin}| head -n {end-begin+1}"
+    elif begin:
+        cmd = f"cat {log_path} | tail -n +{begin}"
+    elif end:
+        cmd = f"cat {log_path} | head -n {end}"
+    else:
+        cmd = f"cat {log_path}"
+    lines = self.execute(cmd)
+    if lines:
+        line_list = []
+        line_num = begin if begin else 1
+        for line in lines.split("\n"):
+            line = replace_ip(line)
+            line_list.append({"line_num": line_num, "content": line})
+            line_num += 1
+    return line_list
+```
+
+可以看到最终就是调用系统的 cat 命令，最终文件对应的内容，整体实现简单直接。
+
+
+## 总结
+通过对 FATE-Board 两个请求的调用链路的跟踪，可以对 FATE-Board 工程有了一些了解，看起来 FATE-Board 是建立在 FATE-Flow 基础上的一个简单可视化，使用的能力基本都是通过 FATE-Flow 提供，而 FATE-Board 仅仅提供必要的数据包装与前端的展示呈现，过程简单清晰，感兴趣也可以自行学习下。
