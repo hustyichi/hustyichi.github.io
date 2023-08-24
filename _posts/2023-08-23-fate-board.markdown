@@ -14,20 +14,20 @@ tags:
 ## 背景介绍
 FATE Board 是 FATE 提供的一个工程，用于给 FATE 提供可视化能力，方便在联邦学习训练中实时查看执行状态，更好地定位执行中遇到的问题。
 
-查看 FATE 架构可以看到 FATE Board 是建立在 MySQL 和 FATE Flow Server 的基础上的，看起来数据来源是来自于这两者。FATE Flow Server 在之前的文章中已经介绍过，FATE 中隐私计算的主要调度流程都是实现在这个服务中。
+查看 FATE 架构可以看到 FATE Board 是建立在 MySQL 和 FATE Flow Server 的基础上的，看起来数据来源是来自于这两者。FATE Flow Server 在[之前的文章](https://hustyichi.github.io/2023/03/08/fate-flow-loop/) 中已经介绍过，FATE 中隐私计算的主要调度流程都是实现在这个服务中。
 
 ![app](/img/in-post/fate-board/fate_arch.png)
 
-FATE Board 代码地址为 [https://github.com/FederatedAI/FATE-Board](https://github.com/FederatedAI/FATE-Board), 本文的探索基于 v1.11.1，后续版本可能有所不同
+FATE Board 代码仓库地址 [https://github.com/FederatedAI/FATE-Board](https://github.com/FederatedAI/FATE-Board), 本文的探索基于 v1.11.1，后续版本可能有所不同
 
 ## FATE Board 实现探索
-FATE Board 工程中包含前端与后端的实现，前端是基于 Vue 实现的，后端则是基于 Java 实现。本文在探索时主要基于两个场景串联了一下完整的流程，分别是主页面的 job 列表页，以及 job 日志详情，通过查看完整的调用链路，对 FATE Board 建立整体的认识。
+FATE Board 工程中包含前端与后端的实现，前端是基于 Vue 实现的，后端则是基于 Java 实现。本文在探索时主要基于两个场景串联了一下完整的流程，分别是主页面的 job 列表页，以及 job 日志详情，通过查看完整的调用链路，对 FATE Board 建立基础的认识。
 
 #### Job 列表页
 
 ![app](/img/in-post/fate-board/list.png)
 
-查看 Job 列表页通过 Chrome 调试模式查看对应的请求，即可比较容易发现对应的请求为 `/job/query/page/new` , 通过对应的接口路径全局搜索可以发现后端的实现为 `src/main/java/com/webank/ai/fate/board/controller/JobManagerController.java` 中的 `queryPagedJob()` 方法，对应的代码实现如下：
+通过 Chrome 调试模式查看对应的请求，即可比较容易发现获取 job 列表数据对应的请求为 `/job/query/page/new` , 通过对应的接口路径全局搜索可以发现后端的实现为 `src/main/java/com/webank/ai/fate/board/controller/JobManagerController.java` 中的 `queryPagedJob()` 方法，对应的代码实现如下：
 
 ```java
 public PageBean<Map<String, Object>> queryPagedJobs(PagedJobQO pagedJobQO) {
@@ -61,9 +61,9 @@ private Map<String, Object> getJobMap(Object query) {
 
 ![app](/img/in-post/fate-board/log.png)
 
-通过 chrome 调试模式看到实际获取 Job 日志是通过 websocket 获取的，请求的地址为 `/log/new/202307260855242117390/host/8889/default`，目前来看日志的获取是特殊的
+通过 chrome 调试模式看到实际获取 Job 日志是通过 websocket 获取的，请求的地址为 `/log/new/202307260855242117390/host/8889/default`，目前来看日志的获取和 job 列表的获取存在一些差异
 
-利用请求地址搜索对应的代码实现，可以确认后端对应的实现路径为 `src/main/java/com/webank/ai/fate/board/websocket/LogWebSocketController.java` 中的 LogWebSocketController 类实现，对于 websocket 的服务端，消息处理都是在 onMessage 实现的，我们可以看到对应的代码实现如下：
+依旧利用请求地址搜索对应的代码实现，可以确认后端对应的实现路径为 `src/main/java/com/webank/ai/fate/board/websocket/LogWebSocketController.java` 中的 LogWebSocketController 类实现，对于 websocket 的服务端，消息处理都是在 onMessage 实现的，我们可以看到对应的代码实现如下：
 
 ```java
 @OnMessage
@@ -86,7 +86,7 @@ public void onMessage(String message,
 }
 ```
 
-我们主要关注日志内容的获取，可以看到 logCat 对应的实现如下所示：
+可以看到的通过路径获取 jobId, role, partyId, componentId 的参数，然后调用 `logSize()` 和 `logCat()` 执行实际的处理，我们主要关注日志内容的获取，可以看到 `logCat()` 对应的实现如下所示：
 
 ```java
 private void logCat(Session session, String jobId, String role, String partyId, String componentId, LogQuery logQuery) {
@@ -119,7 +119,7 @@ private void logCat(Session session, String jobId, String role, String partyId, 
 }
 ```
 
-根据最核心的内容获取去查看 `flowLogFeign.logCat()` 的实现：
+根据最核心的数据获取是调用 `flowLogFeign.logCat()` ，对应的实现：
 
 ```java
 @FeignClient(url = RouteTargeter.URL_PLACE_HOLDER + "/v1/log", name = "flowLogFeign", configuration = FeignRequestInterceptor.class)
@@ -164,4 +164,4 @@ def cat_log(self, begin, end):
 
 
 ## 总结
-通过对 FATE-Board 两个请求的调用链路的跟踪，可以对 FATE-Board 工程有了一些了解，看起来 FATE-Board 是建立在 FATE-Flow 基础上的一个简单可视化，使用的能力基本都是通过 FATE-Flow 提供，而 FATE-Board 仅仅提供必要的数据包装与前端的展示呈现，过程简单清晰，感兴趣也可以自行学习下。
+通过对 FATE-Board 两个请求的调用链路的跟踪，可以对 FATE-Board 工程有了一些了解，看起来 FATE-Board 是建立在 FATE-Flow 基础上的一个简单可视化，使用的能力基本都是通过 FATE-Flow 提供，而 FATE-Board 仅仅提供必要的数据包装与前端的展示呈现，过程简单清晰。后续如果希望了解 FATE-Board 对应的可视化的能力范围，直接查看 FATE-Flow 对应提供的接口即可
