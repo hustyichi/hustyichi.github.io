@@ -89,12 +89,15 @@ optimizer = torch.optim.SGD(model.parameters(), lr = 0.01)
 ```python
 for epoch in range(100):
     # 前馈，得到预测值
+
     y_pred = model(x_data)
 
     # 基于预测值与实际值，得到损失值
+
     loss = criterion(y_pred, y_data)
 
     # 反馈，基于梯度下降调整梯度
+
     optimizer.zero_grad()
     loss.backward()
     optimizer.step()
