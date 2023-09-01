@@ -1,0 +1,116 @@
+---
+layout: post
+title: '联邦学习下线性回归算法实现概述'
+subtitle:   "Overview of the implementation of linear regression algorithm under federated learning"
+date:       2023-09-01 09:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - Federated learning
+    - Machine learning
+---
+
+## 背景介绍
+最近在学习和实践机器学习相关内容，日常的工作主要是涉及联邦学习相关工程领域的开发，这次就从算法的角度来介绍一个联邦学习下的机器学习算法是怎样的。虽然是以线性回归算法为例，事实上其他的机器学习算法，比如逻辑回归，MLP 等也完全适用，进行少量的改造即可。
+
+本文的开发主要基于 Pytorch 实现，主要以实践为主，不包含具体的公式推导。
+
+## 线性回归算法实现
+[线性回归](https://zh.wikipedia.org/wiki/%E7%B7%9A%E6%80%A7%E5%9B%9E%E6%AD%B8) 是机器学习领域最基础的算法，通过直线 `y = wx + b` 拟合现有数据，最终实现损失的最小化。如果对基础的机器学习算法感兴趣可以去 B 站学习[吴恩达的入门课](https://www.bilibili.com/video/BV19B4y1W76i?p=1&vd_source=7b994c4c6ab1cc3449aaae9c1ca56843)
+
+一般情况下，机器学习算法都是基于 Sklearn 实现的，而本文的实践主要是基于 Pytorch 实现的，这样可以用类似的机制做法直接适配实现深度学习相关算法。本文的算法实践过程参考 [PyTorch深度学习实践](https://www.bilibili.com/video/BV1Y7411d7Ys/?vd_source=7b994c4c6ab1cc3449aaae9c1ca56843) ，这个视频课程也做的比较好，感兴趣可以看看
+
+目前 Pytorch 的算法实现过程主要分为如下所示的步骤：
+
+1. 准备数据集 (dataset)；
+2. 设计模型 (model)；
+3. 构建损失函数和优化器 (loss, optimizer)；
+4. 实现完整的训练流程 (train cycle)；
+
+下面的算法实现也从这四个步骤来介绍。
+
+#### 准备数据集
+数据集是用于训练过程的原始数据，在实际中根据实际情况进行准备。这边出于介绍方便，就直接使用刘老师课程中使用的人工构造的数据：
+
+```python
+import torch
+
+x_data = torch.tensor([[1.0], [2.0], [3.0]])
+y_data = torch.tensor([[2.0], [4.0], [6.0]])
+```
+
+其中的 `x_data` 是自变量，`y_data` 是对应的因变量，本例子中期望找到最合适的参数 w, b，从而实现 `y = wx + b` 对应的损失最小化。
+
+#### 设计模型
+基于 pytorch 实现的模型都需要继承自 `torch.nn.Module`，并需要实现对应的前馈方法 `forward()`，线性回归算法的实现如下所示：
+
+```python
+class LinearRegressionModel(torch.nn.Module):
+    def __init__(self, in_features) -> None:
+        super().__init__()
+        self.linear = torch.nn.Linear(in_features, 1)
+
+    def forward(self, x):
+        y_pred = self.linear(x)
+        return y_pred
+
+model = LinearRegressionModel(1)
+
+```
+
+在上面的实现中我们初始化时使用了 torch 提供的线性回归模型 `Linear`，实现的前馈过程也是简单调用线性回归模型的 `__call__()` 方法即可。我们传入的参数 `in_features` 为 1，表示对应的特征维度为 1，对应一维线性函数 `y = wx + b`。
+
+#### 构建损失函数和优化器
+对于线性回归模型，损失函数一般使用均方误差，对应于 `1/n * (y_pred - y)^2`, 误差为预测值 `y_pred` 与实际值 `y` 的差值取平方，最后再取均值，对应的代码如下所示：
+
+```python
+criterion = torch.nn.MSELoss()
+```
+
+对于算法执行中，一般都是通过梯度下降来调整现有的参数，从而实现更小的的损失值，最终保证模型的效果在现有数据中表现越来越好的。优化器有很多选择，目前我们就选择简单的 SGD 优化器即可，对应的代码如下所示：
+
+```python
+optimizer = torch.optim.SGD(model.parameters(), lr = 0.01)
+```
+
+其中 lr 表示学习率，决定了梯度下降的速度，如果太小则训练需要的时间会比较久，如果太大会导致模型无法收敛，最终可能训练失败。
+
+#### 实现完整的训练流程
+常规的模型训练过程一般是进行多轮的迭代，在单个轮次内，执行下面的步骤：
+
+1. 前馈模型训练；
+2. 获取模型损失值；
+3. 反馈调整梯度；
+
+一个简单的代码示例如下所示：
+
+```python
+for epoch in range(100):
+    # 前馈，得到预测值
+    y_pred = model(x_data)
+
+    # 基于预测值与实际值，得到损失值
+    loss = criterion(y_pred, y_data)
+
+    # 反馈，基于梯度下降调整梯度
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
+```
+
+通过不同迭代，最终得到满足要求的模型。
+
+## 联邦学习下线性回归算法实现
+[联邦学习](https://cloud.google.com/architecture/federated-learning-google-cloud?hl=zh-cn) 是 Google 2016 年提出一种多方联合进行模型训练的技术方案，通过各个参与方独立进行模型训练，然后将各个参与方训练的模型进行聚合得到新的模型，这样可以在不需要将原始数据给出去，就可以实现联合的模型训练。通过这种方式就解决了数据孤岛问题，各方都可以在不需要拿到其他方隐私数据的情况下就获得了使用这些数据训练出更好模型的能力
+
+对于模型聚合方案，Google 给出的聚合方案是 [FedAvg](https://arxiv.org/abs/1602.05629)，事实上这个方案极其简单，就是通过对多方的模型参数取平均值即可。
+
+
+
+
+
+
+## 总结
+
