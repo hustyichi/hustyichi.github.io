@@ -22,41 +22,41 @@ tags:
 注意，本文针对是截止 2023-9 月最新的版本 v2.5.1，后续的版本可能会有所差异。
 
 ## 架构介绍
-在开始介绍具体的细节前，可以先看看 FATE 建立在 Eggroll 上的架构：
+在开始介绍具体的细节前，先看看建立在 Eggroll 上 FATE 的整体架构：
 
 ![eggroll](/img/in-post/eggroll/eggroll.png)
 
-通过上面的架构图可以看到，FATE 部署在 Eggroll 上时，是使用 RollSite 进行数据传输的，RollSite 就是 Eggroll 很重要的一部分，主要承担各个参与方进行通信的能力，而这篇文章主要就是分析 RollSite 的实现细节。
+通过上面的架构图可以看到，FATE 部署在 Eggroll 上时，是使用 RollSite 进行数据传输的，Rollsite 作为 Eggroll 的一部分，主要承担各个互相通信的支撑，这篇文章主要分析 RollSite 的实现细节。
 
-FATE 作为一个联邦学习框架，需要承载多方进行机器学习模型的训练，部分机器学习模型的体积可能会比较大，为了支持这部分的大数据的传输需求，RollSite 预期是具备大数据传输的能力，本篇文章就会揭开其中的实现细节。
+FATE 作为一个联邦学习框架，需要承载多方进行机器学习模型的训练，部分机器学习模型的体积可能会比较大，为了支持这部分的数据传输需求，RollSite 预期是具备大数据传输的能力，本篇文章就会揭开其中的实现细节。
 
 ## RollSite 原理介绍
-在进行源码层面的分析前，先对 RollSite 的原理进行概述，这样方便部分不想深入到源码层面，但是又对 FATE 的数据传输机制感兴趣的研发同学们。
+在进行源码层面的分析前，先对 RollSite 的原理进行概述，方便部分不想深入到源码层面，但是又对 FATE 的数据传输机制感兴趣的研发同学们。
 
-RollSite 在数据传输时使用的推拉模式，发送方先调用 `push()` 将数据推送出去，接收方可以异步调用 `pull()` 拉取数据。
+RollSite 在数据传输时使用的推拉模式，发送方调用 `push()` 将数据推送出去，接收方异步调用 `pull()` 拉取数据。
 
 #### 数据发送
 数据发送的一般流程如下所示：
 
-1. 使用 pickle 对原始数据进行序列化，生成对应的字节数据；
-2. 对生成的字节数据进行分片，使用分片序号标记当前分片的位置，方便接收时进行组装得到原始数据；
-3. 将分片序号与分片数据组装成一个字节流 `batch`，对应的格式如下所示：
+1. 使用 pickle 对待发送的数据进行序列化，生成对应的字节数据；
+2. 对生成的字节数据进行分片，使用分片序号标记分片的顺序，方便接收方进行组装还原得到原始数据；
+3. 将分片序号与分片数据组装成字节流 `batch`，对应的格式如下所示：
 ![eggroll](/img/in-post/eggroll/segment.png)
-4. 将字节流包装为 grpc 包 `Packet`，通过 grpc 请求发送出去；
+4. 将字节流 `batch` 包装为 gRPC 包 `Packet`，通过 gRPC 请求发送出去；
 
 #### 数据拉取
 数据拉取的流程如下所示：
 
 1. 根据 namespace 和 name 获取对应的存储对象 store；
 2. 依次从 store 中包含的各个分区 partitions 中获取对应的字节流 `batch`；
-3. 将字节流 `batch` 进行反向分解，获取原始数据分片的序号与分片数据；
-4. 按照分片的序号对分片数据进行排序后拼接起来，执行反序列化得到原始数据；
+3. 将字节流 `batch` 进行反向分解，获取原始数据分片序号与分片数据；
+4. 按照分片序号对分片数据进行排序后拼接，将拼接后数据进行反序列化得到原始数据；
 
 ## 数据发送源码解析
 
 #### 调用入口 RollSite.push
 
-数据推送对应的入口为 `eggroll/python/eggroll/roll_site/roll_site.py` 中的 `RollSite.push()` 方法，具体的实现简化后如下所示：
+数据推送对应的入口为 `eggroll/python/eggroll/roll_site/roll_site.py` 中的 `RollSite.push()` 方法，实现代码简化后如下所示：
 
 ```python
 def push(self, obj, parties: list = None, options: dict = None):
@@ -71,7 +71,7 @@ def push(self, obj, parties: list = None, options: dict = None):
 
         # 使用线程池中线程发起实际的数据推送，避免进行阻塞主线程，同时提升并发效率
 
-        # 实际的传输处理是在 RollSiteContext 初始化时注册上的，目前仅注册了 grpc，因此实际是通过 RollSiteGrpc 发起数据传输
+        # 实际的传输处理是在 RollSiteContext 初始化时注册上的，目前仅注册了 gRPC，因此实际是通过 RollSiteGrpc 发起数据传输
 
         if isinstance(obj, RollPair):
             future = self._run_thread(self._impl_instance._push_rollpair, obj, rs_header, options)
@@ -83,13 +83,15 @@ def push(self, obj, parties: list = None, options: dict = None):
 
 ```
 
-可以看到在此方法中是对需要发送的相关方依次调用 `RollSiteGrpc` 中的方法进行实际的数据发送。实际的发送过程是在线程池中利用线程调用完成的，在这种重 IO 情况下并发处理速度会更快，同时也可以避免阻塞发送的主线程。
+可以看到实际的发送封装在 `self._run_thread()` 方法中的，实际的数据在线程中执行，这样可以避免阻塞执行主线程，同时在 IO 密集型的数据发送任务效率更高。
 
-可以看到根据发送对象的类型选择调用 `_push_rollpair()` 或 `_push_bytes()`，我们后续直接选择最原始的 `_push_bytes()` 介绍发送流程，实际 `_push_bytes()` 中包含了过多的技术细节，我们后续拆分进行介绍
+实际的发送是通过调用 `RollSiteGrpc._push_rollpair()` 或 `RollSiteGrpc._push_bytes()` 实现的，后续选择基于最原始的 `_push_bytes()` 介绍发送流程
 
 
 #### 发送流程 - 数据分片
-Grpc 默认的数据传输上限为 4MB, 虽然我们可以通过调整配置将上限提高至 2GB，但是在单个网络请求中发送过大的数据依旧不太合理，传输中意外的中断可能就意味着完整的数据都需要重新发送，因此 RollSite 中对数据进行了分片发送，数据分片的实现在 `_push_bytes()` 中的 `_generate_obj_bytes()` 实现，具体的实现如下所示：
+gRPC 默认的数据传输上限为 4MB, 虽然可以通过调整配置将上限提高至 2GB，但是在单个网络请求中发送过大的数据依旧不太可靠谱，传输中意外的中断可能就意味着完整的数据都需要重新发送。
+
+RollSite 对数据进行了分片发送，数据分片是由 `_push_bytes()` 中包含的 `_generate_obj_bytes()` 方法完成，具体的实现如下所示：
 
 ```python
 # 对数据进行分片，返回分片序号以及对应的分片数据
@@ -113,14 +115,14 @@ def _generate_obj_bytes(py_obj, body_bytes):
         cur_pos += body_bytes
 ```
 
-可以看到分片的逻辑还是说简单清晰的，对原始数据进行序列化后，通过迭代器直接返回每片的序号 `key_id` 和对应的数据
+可以看到实现中基于 pickle 进行了序列化，之后按照 `body_bytes` 定义的大小对原始数据进行了分片，并通过迭代器返回分片序号和对应的数据
 
 #### 发送流程 - 数据组装为 batch
-分片产生的编号与实际的数据需要组装为一个整体发送出去，实际的组装是调用 `eggroll/python/eggroll/roll_pair/transfer_pair.py` 中的 `pair_to_bin_batch()` 方法完成的，此方法可以将多个分片的 key, value 组合成一个 batch 进行返回，实现的格式如下：
+分片序号与分片数据需要组装为一个整体进行发送，实际的组装是调用 `eggroll/python/eggroll/roll_pair/transfer_pair.py` 中的 `pair_to_bin_batch()` 方法完成的，此方法可以将多个分片的序号，分片数据组合成一个 `batch` ，方便后续进行发送，实现的格式如下：
 
 ![eggroll](/img/in-post/eggroll/segment.png)
 
-具体的实现如下所示：
+具体的实现简化后如下所示：
 
 ```python
 def pair_to_bin_batch(input_iter, limit=None, sendbuf_size=-1):
@@ -148,11 +150,11 @@ def pair_to_bin_batch(input_iter, limit=None, sendbuf_size=-1):
         writer = PairBinWriter(pair_buffer=buffer, data=ba)
         return bin_batch
 
+    # 首次 commit 初始化缓冲区
+
     commit()
 
-    # 通过持续调用，将原始数据转化为特定格式化的字节流
-
-    # 对应格式为 `数据头,<key 长度，key，value 长度，value>`，其中 <> 中的内容是不断重复
+    # 通过持续迭代处理，将原始数据转化为 二进制 batch
 
     for k, v in input_iter:
         try:
@@ -162,7 +164,7 @@ def pair_to_bin_batch(input_iter, limit=None, sendbuf_size=-1):
                 break
         except IndexError as e:
 
-            # 报错时反映当前数据的插入超过缓冲区的大小，通过 commit 将数据返回，并额外新建缓冲区
+            # 报错时反映当前数据的插入超过缓冲区的大小，通过 commit 将数据返回，并清空缓冲区
 
             yield commit(max(sendbuf_size, len(k) + len(v) + 1024))
             writer.write(k, v)
@@ -172,17 +174,22 @@ def pair_to_bin_batch(input_iter, limit=None, sendbuf_size=-1):
     yield commit()
 ```
 
-上面的实现有点不太好理解，而且因为将数据对象的修改耦合在 `PairBinWriter` 对象中，导致更加不清晰。下面给出一些技术要点，帮助大家更容易理解这段代码：
+上面的实现有点不太好理解，而且因为将缓冲区的修改隐藏在 `PairBinWriter` 对象中，导致更加不清晰。下面给出一些关键点，帮助大家更容易理解这段代码：
 
-1. 上面的 `ba` 实际是作为一个临时缓冲区，而 `commit()` 实现的能力是每次调用时都会返回缓冲区 `ba` 中已有的数据，并清空缓冲区。单次 commit() 返回的数据就是 `batch`，其长度受缓冲区的大小限制，可以通过 `sendbuf_size` 指定。
-2. 缓存区如何实现写满之后就开始返回呢？事实上是通过写入时报错 `IndexError` 实现，如果实际写入时发现数据越界，就会抛出异常，此时就会自动触发 `commit()` 方法将缓存区中数据返回并清空缓冲区。
-3. `batch` 数据头的写入时在 `commit()` 中初始化 `PairBinWriter` 对象时自动写入的，后续接收时也需要校验数据头验证数据的合法性；
-4. `batch` 数据段的写入是通过持续调用 `PairBinWriter.write()` 实现的，此方法的写入事实上就是往缓存区 `ba` 的空间的写入，因此最后直接返回 `ba`中的数据即可。
+1. 上面的 `ba` 实际是一个临时缓冲区，而 `commit()` 实现的能力是每次调用时都会返回缓冲区 `ba` 中已有的数据，并清空缓冲区；
+2. 单次 commit() 返回的数据就是 `batch`，其长度受缓冲区的大小限制，可以通过 `sendbuf_size` 指定。
+3. `batch` 数据头的写入是在 `commit()` 中初始化 `PairBinWriter` 对象时完成的，写入的格式与前面图示一致；
+4. `batch` 数据段是在调用 `writer.write()` 写入，此方法事实上就是往缓冲区 `ba` 的空间中直接写入，并配合上偏移量 `offset` 的不断更新；
+5. `batch` 写入时如果超出了缓冲区 `ba` 定义的大小，就会触发 `IndexError`, 从而触发 `commit()` 返回数据并清空缓冲区；
 
-通过这个过程可以将原始的 `编号，分片数据` 组成成一个 batch
+通过上面的方法可以将原始的 `分片序号，分片数据` 组合成 `batch`，方便后续进行发送
 
 #### 发送流程 - batch 分组
-将原始的数据转换为 batch 后，单次的 grpc 请求事实上会发送多个 batch，因此需要通过 `_generate_batch_streams()` 实现分组，实现方案就是迭代返回的每个元素都是一个生成器，遍历时再通过 list() 方法转换为列表，然后进行发送。对应的实现如下所示：
+将原始的数据转换为 `batch` 后，理论上就可以直接进行发送了，但是为了提升发送的效率，单次 gRPC 请求会发送多个 `batch`。
+
+Rollsite 通过 `_generate_batch_streams()` 实现 `batch` 分组，单次 gRPC 就会发送一个组的数据。实现的代码如下所示：
+
+实现的方法就是在生成器中嵌套生成器的方法，`_generate_batch_streams()` 方法迭代返回的每个元素都是一个 `chunk_batch_stream` 生成器。这样为了获取元素可以通过如下所示形式
 
 ```python
 def _generate_batch_streams(self, pair_iter, batches_per_stream, body_bytes):
@@ -221,39 +228,53 @@ def _generate_batch_streams(self, pair_iter, batches_per_stream, body_bytes):
 
 ```
 
-可以看到 `chunk_batch_stream()` 方法实现的是一个简单的生成器的逻辑，将获取到的 `batches` 依次返回，实现分组效果的原因是因为最后通过 `yield chunk_batch_stream()` 返回数据，导致遍历时获取到的元素都是生成器，因此外部都需要通过 list() 方法执行转换。
+上面的代码实际上一个生成器嵌套生成器的模式，`_generate_batch_streams()` 方法迭代返回的每个元素都是一个 `chunk_batch_stream` 生成器，获取 `batch` 实际上需要采用类似如下所示的形式才能获取到：
+
+```python
+batch_streams = _generate_batch_streams(pair_iter, batches_per_stream, body_bytes)
+for bs in batch_streams:
+    for batch in bs:
+        print(batch)
+```
+
+而 `chunk_batch_stream()` 实际上时通过不断调用 `next()` 方法获取 `batch` 对象的，最终实现的效果是将一维的 `batch` 列表转变为二维的数据列表。
+
+注意上面的实现实际上存在一个隐患，如果仅仅进行一维的遍历会因为 `_finish_partition` 一直无法结束进入死循环。
 
 #### 发送流程
 
-数据推发送时通过调用 `RollSiteGrpc._push_bytes` 方法完成，实际就是通过前面介绍的 `_generate_batch_streams` 生成的 batch 流，依次转化为 grpc 包 `Packet`，然后调用 Grpc 服务的 `push()` 方法进行数据发送。简化后具体实现如下：
+数据推发送是通过调用 `RollSiteGrpc._push_bytes` 方法完成，通过上面介绍的 `_generate_batch_streams` 生成的 `batch` 组，依次将 `batch` 转化为 gRPC 包 `Packet`，然后调用 gRPC 服务的 `push()` 方法进行数据发送。简化后实现如下：
 
 ```python
 def _push_bytes(self, obj, rs_header: ErRollSiteHeader, options: dict = None):
 
-    # 执行数据分片，并将分片的数据组合为 batch 流
+    # 执行数据分片，并将分片的数据转换为 batch 组迭代器
+
     bs_helper = _BatchStreamHelper(rs_header=rs_header)
     bin_batch_streams = bs_helper._generate_batch_streams(
             pair_iter=_generate_obj_bytes(obj, self.batch_body_bytes),
             batches_per_stream=self.push_batches_per_stream,
             body_bytes=self.batch_body_bytes)
 
-    # 构造 Grpc Client
+    # 构造 gRPC Client
 
     grpc_channel_factory = GrpcChannelFactory()
     channel = grpc_channel_factory.create_channel(self.ctx.proxy_endpoint)
     stub = proxy_pb2_grpc.DataTransferServiceStub(channel)
 
     for batch_stream in bin_batch_streams:
+        # 获取单个 batch 组，对应一个生成器，通过 list 方法转换为列表
+
         batch_stream_data = list(batch_stream)
 
-        # 基于字节流构造的 Packet 包迭代器，通过 grpc 将数据包发送出去
+        # 基于 batch 组构造的 Packet 迭代器，通过 gRPC 进行发送
 
         stub.push(bs_helper.generate_packet(batch_stream_data, cur_retry), timeout=per_stream_timeout)
 ```
 
-完整的实现中会包含异常处理，每次调用 push() 时都支持异常重试，通过分片异常重试，避免了异常时需要重发完整的数据，而且发送的数据量更小，也更容易发送成功，整体效率会更高。
+完整的实现中会包含异常处理，每次调用 `push()` 时都支持异常重试，通过分片发送，避免了异常时需要重发完整的数据，而且发送的数据量更小，也更容易发送成功，整体效率会更高。
 
-如果对数据发送对应的 Grpc Server 感兴趣，对应的实现位于 `eggroll/jvm/roll_site/main/java/com/webank/eggroll/RollSite/grpc/service/DataTransferPipedServerImpl.java`，因此服务端的启动应该是需要具备 java 运行环境的，虽然不确定 FATE 团队选择这样的多语言混合方案，但是确实反映了 Grpc 跨语言的便利性。
+数据发送对应的服务端实现位于 `java/com/webank/eggroll/RollSite/grpc/service/DataTransferPipedServerImpl.java`，因此服务端的启动应该是需要具备 java 运行环境的，虽然不确定 FATE 团队选择这样的多语言方案的原因，但是确实反映了 gRPC 跨语言的便利性。
 
 ## 数据拉取源码解析
 数据拉取是通过调用 `eggroll/python/eggroll/roll_site/roll_site.py` 中的 `pull()`方法实现的，和发送的情况类似，此方法就是通过调用 `RollSiteGrpc._pull_one()` 实现，这部分的代码比较简单，直接分块看具体数据拉取的实现。
@@ -319,7 +340,7 @@ def gather(self, store):
         yield from TransferPair.bin_batch_to_pair(batches)
 ```
 
-上面的实现中通过 `client.recv()` 调用获取原始数据，实际就是通过发起一次 grpc 调用获取数据，然后调用 `TransferPair.bin_batch_to_pair()` 进行分解获取分片序号与数据，数据格式明确的的情况下反向分解也就是获取对应的字节数据，然后根据数据对应类型进行转换即可。
+上面的实现中通过 `client.recv()` 调用获取原始数据，实际就是通过发起一次 gRPC 调用获取数据，然后调用 `TransferPair.bin_batch_to_pair()` 进行分解获取分片序号与数据，数据格式明确的的情况下反向分解也就是获取对应的字节数据，然后根据数据对应类型进行转换即可。
 
 ## 总结
 通过前面的梳理，从源码角度对 FATE 中的 Eggroll 中的数据传输机制进行了介绍，FATE 中通过数据分片与编号，通过设计良好的数据流格式，实现了鲁棒性更高的大数据传输需求，从而支撑了 FATE 进行了多方的模型与其他类型的数据传输需求。
