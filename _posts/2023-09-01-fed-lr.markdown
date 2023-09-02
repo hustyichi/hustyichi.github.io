@@ -110,10 +110,56 @@ for epoch in range(100):
 
 对于模型聚合方案，Google 给出的聚合方案是 [FedAvg](https://arxiv.org/abs/1602.05629)，事实上这个方案极其简单，就是通过对多方的模型参数取平均值即可。
 
+#### 联邦学习训练流程
+联邦学习训练的基础流程如下所示：
 
+![process](/img/in-post/fedavg/process.png)
 
+可以看到主要包含两种角色:
 
+1. Arbiter，此角色主要负责协调各方进行模型训练，在当前的情况下主要进行模型的聚合。
+2. Party，此角色主要负责执行本地模型训练，Party 方是可以访问到数据，因此可以基于本地的数据进行模型的训练；
 
+可以看到整体的流程主要包含如下所示：
+
+1.本地模型训练，此步骤下模型训练与常规的机器学习的流程类似，训练得到单次迭代生成的模型，并将对应的模型上传至 Arbiter；
+2. Arbiter 使用 FedAvg 算法执行模型聚合，聚合后得到的模型接近使用各个 Party 的数据合并在一起训练的模型；
+3. Arbiter 将聚合后的模型下发至各个 Party，Party 使用聚合后的模型更新本地的模型，开始新一轮的训练；
+
+#### Party 方算法实现
+Party 方的主要完成本地模型的训练，因此执行的算法与常规的模型的训练类似，定义数据集，模型，损失函数与优化器与之前的流程没有明显的差异，这边不再过多介绍了，主要关注模型训练过程，单个迭代周期内只执行一轮的模型训练，实现的算法如下：
+
+```python
+y_pred = model(x_data)
+
+loss = criterion(y_pred, y_data)
+
+optimizer.zero_grad()
+loss.backward()
+optimizer.step()
+
+```
+
+在执行完单次的模型训练后，会将训练的模型发送给 Arbiter，模型对应的参数通过 `model.state_dict()` 获取到，模型的发送目前常规的隐私计算框架选择的是 GRPC，其他框架只要能实现数据的通信预期也是 OK 的。
+
+#### Arbiter 方算法实现
+Arbiter 方主要基于 FedAvg 完成各方模型的聚合，并将聚合后的模型下发至各个 Party 方。此算法只是基于已有的参与取平均值即可。在获取到各个 Party 方传输的模型后，先暂存至 model_params 列表中，后续的处理如下：
+
+```python
+keys = model_params[0].keys()
+avg_para = {}
+
+for para in model_params:
+    for key in keys:
+        avg_para[key] = avg_para.get(key, 0) + para.get(key, 0)
+
+for key in keys:
+    avg_para[key] = avg_para[key] / len(model_params)
+```
+
+上面 Arbiter 基于各个 Party 方传入的模型列表 model_params，生成了最终的聚合模型 avg_para，并将聚合生成模型发送至各个 Party 方，而 Party 方获取到对应的模型后通过 `model.load_state_dict(avg_para)` 更新本地的模型。
+
+上面的过程就是一次迭代的完整流程，通过持续迭代多轮，最终即可完成最终模型的训练
 
 ## 总结
-
+本文主要以线性回归算法为例介绍了常规的机器学习模型训练过程，以及基于 FedAvg 的联邦学习模型训练的过程，主要是对完整流程进行综述，对于部分细节没有展开，比如具体的多方数据传输的封装，以及算法评估等问题。但是通过这篇文章，足够对如何使用 Pytorch 进行算法训练，以及联邦学习的基础训练过程有一定的了解了。
