@@ -277,11 +277,11 @@ def _push_bytes(self, obj, rs_header: ErRollSiteHeader, options: dict = None):
 数据发送对应的服务端实现位于 `java/com/webank/eggroll/RollSite/grpc/service/DataTransferPipedServerImpl.java`，因此服务端的启动应该是需要具备 java 运行环境的，虽然不确定 FATE 团队选择这样的多语言方案的原因，但是确实反映了 gRPC 跨语言的便利性。
 
 ## 数据拉取源码解析
-数据拉取是通过调用 `eggroll/python/eggroll/roll_site/roll_site.py` 中的 `pull()`方法实现的，和发送的情况类似，此方法就是通过调用 `RollSiteGrpc._pull_one()` 实现，这部分的代码比较简单，直接分块看具体数据拉取的实现。
+数据拉取是通过调用 `eggroll/python/eggroll/roll_site/roll_site.py` 中的 `pull()`方法实现的，和发送的原理类似，此方法就是通过在线程中调用 `RollSiteGrpc._pull_one()` 实现，这部分的代码比较简单，直接快进至具体数据拉取的实现。
 
 #### 数据拉取流程
 
-数据拉取是在 `_push_one()` 中实现的，在开始数据拉取前，先通过反复调用 `get_status()` 确认所有的数据都已经传输完成，如果全部传输完成则开始进行实际的数据拉取。具体的实现流程如下所示：
+数据拉取是在 `_push_one()` 中完成的。在开始数据拉取前，会通过反复调用 `get_status()` 确认所有的数据都已经传输完成，确认完成则开始进行实际的数据拉取。具体的实现如下所示：
 
 ```python
 def _pull_one(self, rs_header: ErRollSiteHeader, options: dict = None):
@@ -316,12 +316,17 @@ def _pull_one(self, rs_header: ErRollSiteHeader, options: dict = None):
 
 ```
 
-通过上面的代码可以最核心的代码主要是 `_serdes.deserialize(b''.join(map(lambda t: t[1], sorted(rp.get_all(), key=lambda x: int.from_bytes(x[0], "big")))))`，这边实现了调用 `get_all()` 获取分片的数据，并基于分片序号进行排序，并将实际的数据通过 `join()` 方法进行拼接，最后调用 `_serdes.deserialize()` 进行反序列化，得到原始数据。
+通过上面的代码可以最核心的代码就是 `_serdes.deserialize(b''.join(map(lambda t: t[1], sorted(rp.get_all(), key=lambda x: int.from_bytes(x[0], "big")))))`，这行代码实现了如下功能：
 
-实际的数据的获取 get_all() 是通过获取数据对应的 store，并调用 `transfer_pair.gather()` 完成数据的获取的
+1. 调用 `get_all()` 获取分片的数据；
+2. 基于分片序号排序分片数据；
+3. 通过 `join()` 方法拼接分片数据；
+4. 调用 `_serdes.deserialize()` 进行反序列化，得到原始数据。
+
+数据获取的 `get_all()` 方法就是通过调用 `transfer_pair.gather()` 完成数据的获取，下面对这个方法进行分析
 
 #### 实际数据获取
-实际的数据获取是通过调用 `eggroll/python/eggroll/roll_pair/transfer_pair.py` 中的 `gather()` 方法完成的，因为 store 包含了数据存储对应的分区 partition，通过对 partition 进行遍历，依次获取原始数据，并执行反向分解，即可得到对应的分片数据。具体的实现如下所示：
+实际的数据获取是通过调用 `eggroll/python/eggroll/roll_pair/transfer_pair.py` 中的 `gather()` 方法完成的，传入的 store 包含了数据存储对应的分区 partition，通过对 partition 进行遍历，依次获取 partiton 中包含的 `batch` 数据块列表，并执行反向分解，即可得到对应的分片数据。具体的实现如下所示：
 
 ```python
 def gather(self, store):
@@ -336,11 +341,11 @@ def gather(self, store):
 
         batches = (b.data for b in client.recv(endpoint=target_endpoint, tag=tag, broker=None))
 
-        # 解析数据块，得到 key, value 对，其中 key 表示包对应的序号，value 表示实际的内容
+        # 解析数据块，得到 `分片序号, 分片数据` 对
         yield from TransferPair.bin_batch_to_pair(batches)
 ```
 
-上面的实现中通过 `client.recv()` 调用获取原始数据，实际就是通过发起一次 gRPC 调用获取数据，然后调用 `TransferPair.bin_batch_to_pair()` 进行分解获取分片序号与数据，数据格式明确的的情况下反向分解也就是获取对应的字节数据，然后根据数据对应类型进行转换即可。
+上面的实现中通过 `client.recv()` 调用获取原始数据，实际就是通过发起一次 gRPC 调用获取数据，然后调用 `TransferPair.bin_batch_to_pair()` 分解 `batch` 获取分片序号与数据，由于 `batch` 的格式已经预先定义后，分解的过程也就是解析对应的字节，并进行类型的转换。
 
 ## 总结
 通过前面的梳理，从源码角度对 FATE 中的 Eggroll 中的数据传输机制进行了介绍，FATE 中通过数据分片与编号，通过设计良好的数据流格式，实现了鲁棒性更高的大数据传输需求，从而支撑了 FATE 进行了多方的模型与其他类型的数据传输需求。
