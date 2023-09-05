@@ -11,34 +11,36 @@ tags:
     - Federated learning
     - FATE
     - Eggroll
-    - Rollsite
+    - RollSite
 ---
 
 ## 背景介绍
-在[之前的文章](https://hustyichi.github.io/2023/03/08/fate-flow-loop/) 中对 FATE 的调度系统 FATE-Flow 从源码角度进行了介绍，FATE 的可视化 [FATE-Board](https://hustyichi.github.io/2023/08/23/fate-board/) 之前也介绍过了，对于 FATE 底层使用的数据传输机制 Eggroll 一直没有过多介绍，[官方文档](https://fate.readthedocs.io/en/latest/zh/architecture/#overview) 上只有 Eggroll 部署的内容，网络上基本搜不到 FATE 底层数据传输 Eggroll 原理分析的内容，而 [Eggroll 工程](https://github.com/FederatedAI/eggroll) 使用的 Python + Java + Scala 的开发语言，导致想了解原理的成本也会更高一些，估计这也是劝退部分人的一些原因。最近刚好有空，就对 Eggroll 源码进行了阅读，整理相关内容在这边，方便大家入门。
+在[之前的文章](https://hustyichi.github.io/2023/03/08/fate-flow-loop/) 中对 FATE 的调度系统 FATE-Flow 从源码角度进行了介绍，FATE 的可视化 [FATE-Board](https://hustyichi.github.io/2023/08/23/fate-board/) 之前也介绍过了，对于 FATE 底层使用的数据传输机制 Eggroll 一直没有过多介绍。
 
-注意，本文针对是目前最近发布的 v2.5.1，后续的版本可能会有所不同，但是原理上应该不会有太大的变动。
+而这一块的技术细节一直没有太多的资料可以参考，[官方文档](https://fate.readthedocs.io/en/latest/zh/architecture/#overview) 上只有 Eggroll 部署相关的内容，网络上基本搜不到 FATE 底层数据传输 Eggroll 原理分析的内容，而 [Eggroll 源码](https://github.com/FederatedAI/eggroll) 使用的 Python + Java + Scala 的开发语言，导致想了解细节的成本也会更高一些，估计这也是劝退部分人的一些原因。最近刚好有空，阅读了 Eggroll 的实现细节，整理相关内容在这边，希望给后面的人降低点门槛。
+
+注意，本文针对是截止 2023-9 月最新的版本 v2.5.1，后续的版本可能会有所差异。
 
 ## 架构介绍
 在开始介绍具体的细节前，可以先看看 FATE 建立在 Eggroll 上的架构：
 
 ![eggroll](/img/in-post/eggroll/eggroll.png)
 
-通过上面的架构图可以看到，FATE 部署在 Eggroll 上时，是使用 Rollsite 进行数据传输的，Rollsite 就是 Eggroll 很重要的一部分，主要承担各个参与方进行通信的能力，而这篇文章主要就是分析 Rollsite 的实现细节。
+通过上面的架构图可以看到，FATE 部署在 Eggroll 上时，是使用 RollSite 进行数据传输的，RollSite 就是 Eggroll 很重要的一部分，主要承担各个参与方进行通信的能力，而这篇文章主要就是分析 RollSite 的实现细节。
 
-FATE 作为一个联邦学习框架，需要承载多方进行机器学习模型的训练，部分模型的大小可能会比较大，而 FATE 也是可以稳定传输的，这篇文章就会揭开其中的秘密。
+FATE 作为一个联邦学习框架，需要承载多方进行机器学习模型的训练，部分机器学习模型的体积可能会比较大，为了支持这部分的大数据的传输需求，RollSite 预期是具备大数据传输的能力，本篇文章就会揭开其中的实现细节。
 
-## Rollsite 原理介绍
-在进行源码层面的分析前，先对 Rollsite 的原理进行概述，这样方便部分不想深入到源码层面，但是又对 FATE 的数据传输机制感兴趣的研发同学们。
+## RollSite 原理介绍
+在进行源码层面的分析前，先对 RollSite 的原理进行概述，这样方便部分不想深入到源码层面，但是又对 FATE 的数据传输机制感兴趣的研发同学们。
 
-Rollsite 在数据传输时使用的推拉模式，发送方先调用 `push()` 将数据推送出去，接收方可以异步调用 `pull()` 拉取数据。
+RollSite 在数据传输时使用的推拉模式，发送方先调用 `push()` 将数据推送出去，接收方可以异步调用 `pull()` 拉取数据。
 
 #### 数据发送
 数据发送的一般流程如下所示：
 
 1. 使用 pickle 对原始数据进行序列化，生成对应的字节数据；
-2. 对生成的字节数据进行分片，使用分片序号标记当前分片的位置，方便接收时进行组装还原；
-3. 将分片序号与分片数据组装成一个字节流 `batch`，字节流对应的格式如下所示：
+2. 对生成的字节数据进行分片，使用分片序号标记当前分片的位置，方便接收时进行组装得到原始数据；
+3. 将分片序号与分片数据组装成一个字节流 `batch`，对应的格式如下所示：
 ![eggroll](/img/in-post/eggroll/segment.png)
 4. 将字节流包装为 grpc 包 `Packet`，通过 grpc 请求发送出去；
 
@@ -46,11 +48,9 @@ Rollsite 在数据传输时使用的推拉模式，发送方先调用 `push()` �
 数据拉取的流程如下所示：
 
 1. 根据 namespace 和 name 获取对应的存储对象 store；
-2. 依次从 store 中包含的各个分区 partitions 中获取对应的数据字节流；
-3. 将数据字节流进行反向分解，获取原始数据分片的序号与分片数据；
-4. 按照分片的序号对分片数据进行排序后拼接起来，最后执行反序列化得到原始数据；
-
-简单总结一下，原始数据序列化后分解，将序号与分片数据整合为数据流后发送，接收时基于分片序号排序拼接即可。
+2. 依次从 store 中包含的各个分区 partitions 中获取对应的字节流 `batch`；
+3. 将字节流 `batch` 进行反向分解，获取原始数据分片的序号与分片数据；
+4. 按照分片的序号对分片数据进行排序后拼接起来，执行反序列化得到原始数据；
 
 ## 数据发送源码解析
 
@@ -70,6 +70,7 @@ def push(self, obj, parties: list = None, options: dict = None):
                 data_type=data_type)
 
         # 使用线程池中线程发起实际的数据推送，避免进行阻塞主线程，同时提升并发效率
+
         # 实际的传输处理是在 RollSiteContext 初始化时注册上的，目前仅注册了 grpc，因此实际是通过 RollSiteGrpc 发起数据传输
 
         if isinstance(obj, RollPair):
@@ -88,7 +89,7 @@ def push(self, obj, parties: list = None, options: dict = None):
 
 
 #### 发送流程 - 数据分片
-Grpc 默认的数据传输上限为 4MB, 虽然我们可以通过调整配置将上限提高至 2GB，但是在单个网络请求中发送过大的数据依旧不太合理，传输中意外的中断可能就意味着完整的数据都需要重新发送，因此 Rollsite 中对数据进行了分片发送，数据分片的实现在 `_push_bytes()` 中的 `_generate_obj_bytes()` 实现，具体的实现如下所示：
+Grpc 默认的数据传输上限为 4MB, 虽然我们可以通过调整配置将上限提高至 2GB，但是在单个网络请求中发送过大的数据依旧不太合理，传输中意外的中断可能就意味着完整的数据都需要重新发送，因此 RollSite 中对数据进行了分片发送，数据分片的实现在 `_push_bytes()` 中的 `_generate_obj_bytes()` 实现，具体的实现如下所示：
 
 ```python
 # 对数据进行分片，返回分片序号以及对应的分片数据
@@ -150,6 +151,7 @@ def pair_to_bin_batch(input_iter, limit=None, sendbuf_size=-1):
     commit()
 
     # 通过持续调用，将原始数据转化为特定格式化的字节流
+
     # 对应格式为 `数据头,<key 长度，key，value 长度，value>`，其中 <> 中的内容是不断重复
 
     for k, v in input_iter:
@@ -251,7 +253,7 @@ def _push_bytes(self, obj, rs_header: ErRollSiteHeader, options: dict = None):
 
 完整的实现中会包含异常处理，每次调用 push() 时都支持异常重试，通过分片异常重试，避免了异常时需要重发完整的数据，而且发送的数据量更小，也更容易发送成功，整体效率会更高。
 
-如果对数据发送对应的 Grpc Server 感兴趣，对应的实现位于 `eggroll/jvm/roll_site/main/java/com/webank/eggroll/rollsite/grpc/service/DataTransferPipedServerImpl.java`，因此服务端的启动应该是需要具备 java 运行环境的，虽然不确定 FATE 团队选择这样的多语言混合方案，但是确实反映了 Grpc 跨语言的便利性。
+如果对数据发送对应的 Grpc Server 感兴趣，对应的实现位于 `eggroll/jvm/roll_site/main/java/com/webank/eggroll/RollSite/grpc/service/DataTransferPipedServerImpl.java`，因此服务端的启动应该是需要具备 java 运行环境的，虽然不确定 FATE 团队选择这样的多语言混合方案，但是确实反映了 Grpc 跨语言的便利性。
 
 ## 数据拉取源码解析
 数据拉取是通过调用 `eggroll/python/eggroll/roll_site/roll_site.py` 中的 `pull()`方法实现的，和发送的情况类似，此方法就是通过调用 `RollSiteGrpc._pull_one()` 实现，这部分的代码比较简单，直接分块看具体数据拉取的实现。
@@ -282,6 +284,7 @@ def _pull_one(self, rs_header: ErRollSiteHeader, options: dict = None):
             if data_type == "object":
 
                 # 从 RollPair 中获取完整的对象
+
                 # 基于包序号进行排序，并将排序后的数据组装起来，执行反序列化得到原始数据
 
                 result = _serdes.deserialize(b''.join(map(lambda t: t[1], sorted(rp.get_all(), key=lambda x: int.from_bytes(x[0], "big")))))
