@@ -1,7 +1,7 @@
 ---
 layout: post
-title: '医疗图像标注方案 medical-labelme'
-subtitle:   "Medical image labeling project medical-labelme"
+title: '自研医疗图像标注工具 medical-labelme'
+subtitle:   "Self-developed medical image annotation tool medical-labelme"
 date:       2023-09-23 10:36:00
 author:     "Bryan"
 header-mask: 0.3
