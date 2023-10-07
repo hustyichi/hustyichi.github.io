@@ -1,7 +1,7 @@
 ---
 layout: post
-title: 'medical-labelme 改造方案概述'
-subtitle:   "Overview of the medical-labelme transformation program"
+title: 'medical-labelme 升级方案概述'
+subtitle:   "Overview of the medical-labelme upgrade plan"
 date:       2023-10-04 20:12:00
 author:     "Bryan"
 header-mask: 0.3
