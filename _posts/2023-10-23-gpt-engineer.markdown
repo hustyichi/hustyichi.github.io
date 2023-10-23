@@ -65,11 +65,14 @@ class DicomDataset(Dataset):
         label_path = os.path.join(self.label_dir, image_file.replace('.dcm', '.json'))
 
         # Load DICOM image
+
         dicom_image = pydicom.dcmread(image_path).pixel_array
         # Convert DICOM image to tensor
+
         image = ToTensor()(Image.fromarray(dicom_image))
 
         # Load label
+
         with open(label_path, 'r') as f:
             label = json.load(f)['label']
 
@@ -92,12 +95,15 @@ from torch.utils.data import DataLoader
 from src.dicom_dataset import DicomDataset
 
 # Initialize dataset and dataloader
+
 dataset = DicomDataset('path/to/image_dir', 'path/to/label_dir')
 dataloader = DataLoader(dataset, batch_size=32, shuffle=True)
 
 # Loop over the dataset
+
 for images, labels in dataloader:
     # Your training code here
+
     pass
 
 ```
