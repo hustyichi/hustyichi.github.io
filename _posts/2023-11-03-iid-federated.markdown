@@ -25,7 +25,7 @@ tags:
 #### 独立同部分解决方案
 在常规的机器学习中，Non-IID 的问题也可能会存在，但是问题相对容易解决，首先是因为机器学习中可以获得完整的训练样本，而且在训练前会被随机打乱，因此一般情况下都是符合 IID 的了。
 
-但是在联邦学习中这个问题就会更加明显，因为在联邦学习中单个参与方只能获得有限的数据集，各方的数据集的差异可能会比较大，最终导致训练出来的模型差异很大，最终通过 `FedAvg` 进行聚合时效果不佳。从论文中截取对应的效果图如下：
+但是在联邦学习中这个问题就会更加明显，因为在联邦学习中单个参与方只能获得有限的数据集，各方的数据集的差异可能会比较大，最终导致训练出来的模型差异很大，最终通过 FedAvg 进行聚合时效果不佳。从论文中截取对应的效果图如下：
 
 ![fedavg](/img/in-post/iid-federated/fedavg.png)
 
@@ -37,7 +37,7 @@ Fedshare 是源自 2018 年的论文 [Federated Learning with Non-IID Data](http
 
 ![fedshare](/img/in-post/iid-federated/fedshare.png)
 
-1. 各个参与方 Worker 共享一定比例的数据作为公共数据集发送给 Arbiter，对应的比例定义为 β;
+1. 各个参与方 Worker 共享一定比例的脱敏数据作为公共数据集发送给 Arbiter，对应的比例定义为 β;
 2. Arbiter 将收到公共数据集合并为完整的公共数据集，将公共数据集中的一部分数据下发给各个参与方 Worker，对应的比例定义为 α，Worker 将自己原有的数据集与收到的公共数据集进行合并得到训练数据集;
 3. Arbiter 基于完整的公共数据集训练出初始模型权重下发给 Worker，Worker 基于此模型权重初始化模型，后续在此基础上进行训练；
 4. Worker 训练出本地模型，传递给 Arbiter，Arbiter 聚合后下发给 Worker，重复执行此步骤直到训练出合适的模型；
@@ -206,7 +206,17 @@ def train_loop(workers: list[FedShareWorker], arbiter: FedShareArbiter, max_iter
 在实际的业务中，`FedShareWorker` 和 `FedShareArbiter` 会继承自基础类，将方法的调用隐式转换为 gRPC 网络请求调用，这样才能实现真正实用的联邦学习调用。
 
 ## FedMeta 算法
-FedMeta 是源自 2019 年的论文 [Federated Learning with Unbiased Gradient Aggregation and Controllable Meta Updating](https://arxiv.org/pdf/1910.08234.pdf)。
+FedMeta 是源自 2019 年的论文 [Federated Learning with Unbiased Gradient Aggregation and Controllable Meta Updating](https://arxiv.org/pdf/1910.08234.pdf)，其主要步骤如下：
+
+![fedmeta](/img/in-post/iid-federated/fedmeta.png)
+
+1. 各个参与方 Worker 共享部分脱敏数据作为训练数据集发送给 Arbiter;
+2. Arbiter 合并 Worker 发送的训练数据集，作为元训练集(meta training set) 用于后续的模型训练；
+3. Worker 训练出本地模型，引入了一种无偏梯度聚合方案(Unbiased Gradient Aggregation) 用于模型训练；
+4. 传递给 Arbiter，Arbiter 进行聚合，并对训练后模型使用元训练集进行训练，并将训练后生成的模型权重下发给 Worker；
+
+可以看到主流程与 FedAvg 基本上是一样的，主要的变化在于 Arbiter 在每轮模型聚合后使用元训练集进行额外的模型训练，因此效果更好。
 
 
 ## 总结
+本文主要介绍了联邦学习中两个解决 Non-IID 的算法，因为都是基于共享数据的思路去解决问题的，因此整体的流程与思路比较接近，但是从实际来看，基于共享数据的算法虽然可以有效地解决 Non-IID，但是可能会导致数据泄露的风险更高。一定程度上也违背了联邦学习中数据不出域的原则，因此应用场景比较有限，在存在部分可共享的脱敏数据场景下可以考虑使用。
