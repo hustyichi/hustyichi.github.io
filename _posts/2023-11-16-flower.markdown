@@ -1,0 +1,41 @@
+---
+layout: post
+title: '深入探索联邦学习框架 Flower'
+subtitle:   "A deep dive into the federated learning framework Flower"
+date:       2023-11-16 21:20:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - Federated learning
+    - python
+    - Machine learning
+---
+
+## 联邦学习框架
+本文主要期望介绍一个设计良好的隐私计算框架 [Flower](https://github.com/adap/flower)，在开始介绍介绍 Flower 框架的细节前，先了解下一个基础的联邦学习框架应该是怎样的。
+
+作为一个联邦学习框架，必然会包含对横向联邦学习的支持。横向联邦是指拥有类似数据的多方可以在不泄露数据的情况下联合训练出一个模型，这个模型可以充分利用各方的数据。具体的流程如下：
+
+![federated](/img/in-post/flower/federated.png)
+
+完整的过程可以简化为：拥有数据的各方使用独立的数据训练出一个模型，然后将模型参数发送给服务端，服务端收到各方发来的模型参数后，聚合生成新的模型参数，聚合后的模型表现等价于各方数据合并在一起训练出的模型效果。
+
+从上面的过程可以看到，作为一个联邦学习框架，应该具备如下所示的能力：
+
+1. 可以实现机器学习模型训练，这样就能让各个参与方使用本地的数据训练出对应的模型；
+2. 具备聚合机器学习模型的能力，这样各个参与方就能将分散的模型聚合生成一个更好的模型；
+
+## Flower 框架介绍
+[Flower](https://github.com/adap/flower) 是一个轻量的联邦学习框架，提出于 2020 年。一直以来，因为设计良好，方便扩展受到了比较多的关注。团队通过论文 [FLOWER: A FRIENDLY FEDERATED LEARNING FRAMEWORK](https://arxiv.org/pdf/2007.14390.pdf) 介绍了框架的设计思想。通过论文可以看到框架设计主要追求下面目标：
+
+1. 可拓展，支持大量的客户端同时进行模型训练；
+2. 使用灵活，支持异构的客户端，通信协议，隐私策略，支持新功能的开销小；
+
+## Flower 使用
+
+
+
+## 框架设计
+
+
