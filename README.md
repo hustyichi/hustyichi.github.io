@@ -2,6 +2,7 @@
 
 - [联邦学习下线性回归算法实现概述](https://hustyichi.github.io/2023/09/01/fed-lr/)
 - [联邦学习 Non-IID 算法实现](https://hustyichi.github.io/2023/11/03/iid-federated/)
+- [深入探索联邦学习框架 Flower](https://hustyichi.github.io/2023/11/16/flower/)
 
 
 ## FATE 源码解析
