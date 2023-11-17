@@ -1,0 +1,69 @@
+---
+layout: post
+title: 'FATE 纵向联邦学习实现探索'
+subtitle:   "FATE vertical federated learning implementation exploration"
+date:       2023-11-17 15:40:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - Federated learning
+    - python
+    - Machine learning
+---
+
+## 纵向联邦学习
+在之前的文章 [联邦学习下线性回归算法实现概述](https://hustyichi.github.io/2023/09/01/fed-lr/) 与 [深入探索联邦学习框架 Flower](https://hustyichi.github.io/2023/11/16/flower/) 中，主要介绍的都是横向联邦学习的实践。最近针对纵向联邦做了一些探索，整理相关内容在这边。
+
+横向联邦是 Google 在 2016 年提出的，主要解决拥有类似数据的多方进行联合训练的问题。而[纵向联邦](https://arxiv.org/pdf/1902.04885.pdf)是 2018 年杨强教授提出的，主要解决不同类型的企业之间联合进行模型训练的问题。比如淘宝与银行之间，数据的特征重叠较少，但是重复用户较多的情况。针对两者的差异论文中有一个比较容易理解图示：
+
+![vfl](/img/in-post/vfl/vfl.png)
+
+上面图示中下面可以看到纵向联邦中存在重叠用户的两方，通过进行联合训练可以充分利用两方的特征，从而训练出更好的机器学习模型。
+
+#### 纵向联邦训练流程
+纵向联邦的常规训练流程如图所示：
+
+![train](/img/in-post/vfl/vfl-train.png)
+
+主要包含如下所示的步骤：
+
+1. 加密样本对齐，只有两方都存在的样本才能被纳入进行联合训练，因此需要确定这部分交集样本；
+2. 两方联合进行模型训练，这个阶段一般情况下会包含如下所示的步骤：
+
+    - 协作方 C 向数据所有方分发公钥，用于加密传输数据；
+    - 数据拥有方 A 和 B 基于自己数据的特征进行模型训练，并交换中间结果，用于计算各自的梯度和损失；
+    - 数据拥有方 A 和 B 将加密的梯度并添加掩码发送给 C，拥有标签的一方计算出损失后发送给 C；
+    - C 解密梯度和损失后回传给 A、B，A、B去除掩码后更新各方的模型；
+
+在横向联邦的训练过程中，所有的参与方基本上是等价的，各方可以独立进行模型训练。但是在纵向联邦中，只有一个参与方中存在标签 y，因此只有存在标签的一方可以计算出损失，其他方需要依赖存在标签的一方确定损失并更新模型。
+
+## FATE 纵向联邦探索
+FATE 纵向联邦支持了不少算法，在 `examples/dsl/v2` 目录下可以看到以 `hetero` 开头的就是纵向联邦学习算法，本次我们选择的就是 `hetero_nn` 算法，对应的纵向联邦实现神经网络算法。从目录下 `hetero_nn_train_binary_dsl.json` 可以看到当前算法中涉及的组件，从中可以理解算法的实现。文件包含的内容如下所示：
+
+![nn](/img/in-post/vfl/nn.png)
+
+可以看到 FATE 中的纵向联邦神经网络训练任务会包含如下所示的步骤：
+1. 数据读取(reader_0)；
+2. 数据转换(data_transform_0)；
+3. 隐私集合求交，即加密样本对齐(intersection_0);
+4. 纵向联邦神经网络(hetero_nn_0)；
+5. 模型验证(eval_0);
+
+可以看到其中最核心的就是步骤3、4, 本次主要关心的是多方如何进行纵向联邦训练的流程，因此主要关注步骤 4，而步骤 4 对应的组件为 `HeteroNN`，此组件的对应的实现主要在 `python/federatedml/components/hetero_nn.py` 中实现，后续就深入探索这部分内容。
+
+在纵向联邦中需要特别注意参与方是否存在标签，在 FATE 中使用不同的角色进行区分，其中 `Guest` 是指存在标签的参与方，而 `Host` 是指不存在标签的参与方
+
+## FATE HeteroNN 实现
+
+#### FATE HeteroNN 流程
+FATE HeteroNN 实现的方案与前面介绍的常规纵向联邦的实现方案存在一些差异，在 FATE HeteroNN 中没有使用额外的协作方，仅仅包含两种类型的参与方 `Guest` 与 `Host`，训练的流程如下所示：
+
+![loop](/img/in-post/vfl/loop.png)
+
+具体的步骤如下所示：
+
+1. Host 与 Guest 基于本地已有的特征训练使用本地的模型 Bottom Model 进行前向推理获得模型的输出，并将模型前向推理的结果发送给 Guest 的全局模型 Top Model；
+2. Guest 将收到的 Bottom Model 的结果合并作为 Top Model 的输入，训练后得到对应的损失与梯度，并计算获得各个 Bottom Model 对应的损失与梯度；
+3. Guest 将损失与梯度分别发送给对应的 Bottom Model，各个 Bottom Model 基于收到的梯度进行模型的更新；
+
