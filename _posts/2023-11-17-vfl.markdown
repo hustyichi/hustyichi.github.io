@@ -69,8 +69,8 @@ FATE HeteroNN 实现的方案与前面介绍的常规纵向联邦的实现方案
 
 具体的步骤如下所示：
 
-1. Host 与 Guest 各自基于本地已有的特征训练使用本地模型 Bottom Model 进行前向推理获得模型的输出，并将模型前向推理的结果发送给 Guest 的全局模型 Top Model；
-2. Guest 将收到多个 Bottom Model 的结果合并作为 Top Model 的输入，训练后得到对应的损失与梯度，并计算获得各个 Bottom Model 对应的损失与梯度；
+1. Host 与 Guest 各自基于本地已有的特征训练使用本地模型 Bottom Model 进行前向推理获得模型的输出，并将模型前向推理的结果发送给 Guest；
+2. Guest 将收到的多个 Bottom Model 的前向推理的输出进行合并，并将合并的数据作为 Top Model 的输入，使用 Guest 上的标签作为预期输出，训练后得到对应的损失与梯度，然后计算获得各个 Bottom Model 对应的损失与梯度；
 3. Guest 将损失与梯度分别发送给对应的 Bottom Model，各个 Bottom Model 基于收到的梯度进行模型的更新；
 
 在实际中 Host 会存在本地模型 Bottom Model，而 Guest 服务上如果存在可用的数据则会构造一个对应的本地模型 Bottom Model，如果没有也可以不构建 Bottom Model，但 Guest 服务上必然会构建一个全局模型 Top Model，此模型的输出会对应于标签，并基于 Guest 中的标签确定损失与梯度。
@@ -97,7 +97,7 @@ def fit(self, data_inst, validate_data=None):
             self.model.train(batch_data, cur_epoch, batch_idx)
 ```
 
-可以数据集的构造与模型的训练类似常规 pytorch 的流程，而实际的是调用 `model.train()` 完成的，此方法位移 `python/federatedml/nn/hetero/model.py` 中的 `HeteroNNHostModel` 类完成，具体的实现如下：
+可以数据集的构造与模型的训练类似常规 pytorch 的流程，而实际的是调用 `model.train()` 完成的，此方法位于 `python/federatedml/nn/hetero/model.py` 中的 `HeteroNNHostModel` 类中，具体的实现如下：
 
 ```python
 def train(self, x, epoch, batch_idx):
@@ -234,7 +234,7 @@ def train(self, x, y, epoch, batch_idx):
     return loss
 ```
 
-可以看到对应的实现就是基于 Guest 与 Host 中的本地模型 Bottom Model 的输出作为 Guest 全局模型 Top Model 的输入，然后完成对应的反向传播的梯度更新，最终完成完整模型的训练。
+可以看到对应的实现就是基于 Guest 与 Host 中的本地模型 Bottom Model 分别完成各自的特征提取，然后通过 Top Model 执行必要的转换从而匹配到对应的标签，整体还是比较容易理解的。模型的训练过程基本就是前向传播获得输出，反向传播更新模型。核心还在于如何完成梯度的加密与分发，这部分后续再单独梳理。
 
 ## 总结
-通过上面的介绍，可以看到 FATE 中如何实现纵向联邦学习神经网络，从整体的实现流程来看，FATE 将纵向联邦学习中存在数据的各方训练出一个局部小神经网络模型，然后利用全局模型将所有小模型组合起来，从而从而实现多个局部模型 + 单个全局模型组装成一个完整神经网络模型。此模型可以充分利用各个参与方中存在的特征，从而实现更好的预测效果。
+通过上面的介绍，可以看到 FATE 中如何实现纵向联邦学习神经网络，从整体的实现流程来看，FATE 将纵向联邦学习中存在数据的各方训练出一个局部小神经网络模型，利用这个神经网络模型完成对应特征的提取。然后利用全局模型将所有小模型组合起来，从而从而实现多个局部模型 + 单个全局模型组装成一个完整神经网络模型。此模型可以充分利用各个参与方中存在的特征，从而实现更好的预测效果。
