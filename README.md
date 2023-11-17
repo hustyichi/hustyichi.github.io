@@ -12,6 +12,7 @@
 - [FATE-Flow 日志输出机制](https://hustyichi.github.io/2023/03/21/logger-in-fate/)
 - [FATE Board 执行流程探索](https://hustyichi.github.io/2023/08/23/fate-board/)
 - [FATE Eggroll 源码解析](https://hustyichi.github.io/2023/09/04/fate-eggroll/)
+- [FATE 纵向联邦学习实现探索](https://hustyichi.github.io/2023/11/17/vfl/)
 
 
 ## 开发效率
