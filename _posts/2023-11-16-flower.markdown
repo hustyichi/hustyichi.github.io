@@ -243,14 +243,14 @@ def start_client(
             # 注册当前客户端
 
             if create_node is not None:
-                create_node()  # pylint: disable=not-callable
+                create_node()
 
             while True:
                 # 接收服务端发来的消息
 
                 task_ins = receive()
                 if task_ins is None:
-                    time.sleep(3)  # Wait for 3s before asking again
+                    time.sleep(3)
                     continue
 
                 # 处理系统控制类消息，处理完控制类消息就退出
@@ -271,7 +271,7 @@ def start_client(
             # 注销当前客户端
 
             if delete_node is not None:
-                delete_node()  # pylint: disable=not-callable
+                delete_node()
 
         if sleep_duration == 0:
             break
@@ -290,13 +290,10 @@ def handle(client_fn: ClientFn, task_ins: TaskIns) -> TaskRes:
     # 临时支持安全聚合的分支
 
     if server_msg is None:
-        # Instantiate the client
         client = client_fn("-1")
-        # Secure Aggregation
         if task_ins.task.HasField("sa") and isinstance(
             client, SecureAggregationHandler
         ):
-            # pylint: disable-next=invalid-name
             named_values = serde.named_values_from_proto(task_ins.task.sa.named_values)
             res = client.handle_secure_aggregation(named_values)
             task_res = TaskRes(
@@ -354,7 +351,7 @@ def handle_legacy_message(
 Flower 服务端需要自定义的代码较少，主流程是通过直接调用 `src/py/flwr/server/app.py` 中的 `start_server()`方法完成的，我们可以了解下对应的实现：
 
 ```python
-def start_server(  # pylint: disable=too-many-arguments,too-many-locals
+def start_server(
     *,
     server_address: str = ADDRESS_FLEET_API_GRPC_BIDI,
     server: Optional[Server] = None,
