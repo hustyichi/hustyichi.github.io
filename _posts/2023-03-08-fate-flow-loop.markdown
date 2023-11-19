@@ -14,13 +14,13 @@ tags:
 
 ## 背景介绍
 
-Fate 是隐私计算中最有名的开源项目了，从 star 的数量上来看也可以看出来。截止 2023 年 3 月共收获 4.9k 个 star，但是 Fate 一直被认为代码框架复杂，难以理解，作为一个相关的从业者，后续会持续对 Fate 项目的源码进行解析，方便对隐私计算感兴趣的后来者提供一点点帮助。
+FATE 是隐私计算中最有名的开源项目了，从 star 的数量上来看也可以看出来。截止 2023 年 3 月共收获 4.9k 个 star，但是 FATE 一直被认为代码框架复杂，难以理解，作为一个相关的从业者，后续会持续对 FATE 项目的源码进行解析，方便对隐私计算感兴趣的后来者提供一点点帮助。
 
 本文主要基于 FATE-Flow 2022 年 12 月发布的版本 v1.10.0，后续的版本可能略有差异。针对 FATE-Flow 的代码，基于 v1.10.0 的做了一个代码注解的仓库，方便查看具体的代码 [https://github.com/hustyichi/FATE-Flow](https://github.com/hustyichi/FATE-Flow)
 
 ## Fate-Flow 基础介绍
 
-FATE-Flow 是 Fate 项目的重要组成部分，主要用于实现作业的调度，整体的设计可以查看 [官方文档](https://federatedai.github.io/FATE-Flow/latest/zh/fate_flow/)
+FATE-Flow 是 FATE 项目的重要组成部分，主要用于实现作业的调度，整体的设计可以查看 [官方文档](https://federatedai.github.io/FATE-Flow/latest/zh/fate_flow/)
 FATE 中提交的训练作业会提交给 Fate-Flow，由 FATE-Flow 统一进行调度执行，最终生成所需训练结果
 
 Fate-Flow 是作为一个 Web 服务对外提供服务的，对应的初始启动文件为 `FATE-Flow/python/fate_flow/fate_flow_server.py` ，熟悉 flask 的可以看到，最终就是调用 `run_simple` 创建了一个 Web 服务，根据 app 可以找到 Web 服务的主要代码都在 `FATE-Flow/python/fate_flow/apps` 目录下，路由注册的代码如下所示：
@@ -40,7 +40,7 @@ scheduling_urls_prefix = [
 
 可以看到注册的路由主要就是 apps 目录与 scheduling_apps 目录下的路由。
 
-一个注意点：FATE-Flow 是没办法独立运行的，需要作为 FATE 的一部分执行。 FATE-Flow 项目部分依赖的代码，比如 `fate_arch` 是存在于 Fate 工程下，对应的路径为 `FATE/python/fate_arch` ，找不到代码时可以联合 Fate 代码仓库进行阅读
+一个注意点：FATE-Flow 是没办法独立运行的，需要作为 FATE 的一部分执行。 FATE-Flow 项目部分依赖的代码，比如 `fate_arch` 是存在于 FATE 工程下，对应的路径为 `FATE/python/fate_arch` ，找不到代码时可以联合 FATE 代码仓库进行阅读
 
 ## 作业处理流程
 作为一个作业调度的服务，最重要的就是完整的处理流程，先厘清这个主线，其他分支就更容易理解了，主要流程如下所示：
