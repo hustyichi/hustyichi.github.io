@@ -15,6 +15,7 @@
 - [FATE 纵向联邦学习实现探索](https://hustyichi.github.io/2023/11/17/vfl/)
 - [深入探索 FATE 纵向联邦学习模型设计方案](https://hustyichi.github.io/2023/11/22/vfl-model/)
 - [深入探索 FATE 纵向联邦学习安全方案](https://hustyichi.github.io/2023/11/22/vfl-security/)
+- [最简安全纵向联邦学习实现探索](https://hustyichi.github.io/2023/12/04/vfl-lr/)
 
 
 ## 开发效率
