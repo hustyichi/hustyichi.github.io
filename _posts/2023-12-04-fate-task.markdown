@@ -1,0 +1,24 @@
+---
+layout: post
+title: 'FATE 任务全流程探索 - 从任务提交至组件执行'
+subtitle:   "Exploration of the entire FATE task process - from task submission to component execution"
+date:       2023-12-04 22:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - Federated learning
+    - python
+    - Machine learning
+---
+
+## 背景信息
+在最初接触 FATE 源码时就整理过 [FATE Flow 源码解析 - 作业提交处理流程](https://zhuanlan.zhihu.com/p/667631987)，文章整理了 FATE 是如何接收用户提交的作业 (job)，然后将作业拆分为独立的任务 (task)，然后执行完成各个任务，在这个过程中不断更新作业的执行进度，直到最终完成整个作业。如果期望对 FATE 作业提交的执行流程有一个基础的认识，可以详细了解下之前的文章。
+
+在这篇文章是前面文章的补充，期望进一步深入探索 FATE 中提交的作业是如何被如何被拆分，以及各个任务是如何确定对应的执行代码，以及如何在任务之间完成数据的传递。期望读完这篇文章，提交的任何作业，都可以快速明确预期执行链路，出现问题也快速定位具体原因。
+
+## 作业提交
+
+
+
+
