@@ -204,16 +204,98 @@ class Reader(ComponentBase):
         ...
 ```
 
-可以看到会使用组件模块名 `Reader` 初始化 `ComponentMeta` 对象，接下来使用 `reader_cpn_meta.bind_runner` 装饰器绑定对应的执行对象，此对象会实现 `_run()` 方法，其中包含的就是主要的逻辑实现。
+可以看到会使用组件模块名 `Reader` 初始化 `ComponentMeta` 对象，接下来使用 `@reader_cpn_meta.bind_runner` 装饰器绑定对应的执行对象，此对象会实现 `_run()` 方法，其中包含的就是主要的逻辑实现。
 
 查看对应的基类 `ComonentBase` 可以看到实现了其实现了 `run()` 方法，而此方法中会调用 `_run()` 完成主要的功能，因此也就能理解上面实际执行中 `run_object.run()` 的设计了。
 
 
 #### 算法任务执行流程
+前面的 FATE-Flow 工程中图示中可以看到 `Reader` 对应的组件，但是其他的组件都没有看到，其对应的实现都是在 [FATE 项目](https://github.com/FederatedAI/FATE) 中的，FATE 项目中 `python/federatedml/components/components.py` 也存在一个基本一样的 `ComponentMeta` 类，作为所有组件的基类，大部分的算法组件都是实现在 FATE 项目中的。我们就以上面用到的 `HeteroLinR` 组件为例看看算法组件的实现。
+
+实际去查看 `HeteroLinR` 组件可以看到对应的实现与前面的 `Reader` 组件基本一样：
+
+```python
+hetero_linr_cpn_meta = ComponentMeta("HeteroLinR")
+
+# 注册 guest 角色执行类
+
+@hetero_linr_cpn_meta.bind_runner.on_guest
+def hetero_linr_runner_guest():
+    from federatedml.linear_model.coordinated_linear_model.linear_regression.hetero_linear_regression.hetero_linr_guest import (
+        HeteroLinRGuest, )
+
+    return HeteroLinRGuest
+
+```
+
+实际去查看算法组件的实现类可能就会发现一些差异，以 `HeteroLinRGuest` 为例，可以看到实现的方法如下：
+
+```python
+class HeteroLinRGuest(HeteroLinRBase):
+    def fit(self, data_instances, validate_data=None):
+        ...
+
+    def predict(self, data_instances):
+        ...
+```
+
+实际的算法组件只实现了 `fit()` 与 `predict()` 方法，分别对应于算法训练与推理功能，根据前面的介绍，预期算法组件应该执行 `run()` 方法，追踪到算法组件的基类，位于 `python/federatedml/model_base.py` 中 `ModelBase` 类，在此类中就实现了 `run()` 方法，此方法同样是调用 `_run()` 完成主要功能。
+
+`ModelBase` 的 `_run()` 中会根据实际输入生成一个方法列表，然后依次执行。生成方法列表中最重要一部分实现在 `python/federatedml/util/component_properties.py` 中的 `ComponentProperties._train_process()` 中，具体如下：
+
+```python
+def _train_process(self, running_funcs, model, train_data, validate_data, test_data, schema):
+    # 仅有训练集的情况
+
+    elif self.has_train_data:
+        running_funcs.add_func(model.set_flowid, ['fit'])
+        running_funcs.add_func(model.fit, [train_data])
+        running_funcs.add_func(model.set_flowid, ['validate'])
+        running_funcs.add_func(model.predict, [train_data], save_result=True)
+
+    # 不存在训练接，仅有测试集，属于推理阶段
+
+    elif self.has_test_data:
+        running_funcs.add_func(model.set_flowid, ['predict'])
+        running_funcs.add_func(model.predict, [test_data], save_result=True)
+
+    return running_funcs
+```
+
+可以看到根据数据集的情况，会确定执行的方法，存在训练集的情况下，必然会执行 `fit()` 方法用于模型训练，而存在测试集的情况下就一定会生成 `predict()` 方法用于推理。看到这边也就能理解前面算法组件的实现了。
 
 
+#### 任务间数据传递
+从前面的介绍可以知道，算法组件是通过独立进程执行的，考虑进程之间是隔离的，数据不能直接共享，那么就需要明确下数据是如何传递的呢？在单个作业中，一般任务很可能会依赖前面任务执行的输出作为后续任务的输入。比如 `DataTransform` 组件对应的任务需要执行数据转换，必然会依赖 `Reader` 组件对应的任务先读取到数据。
 
-#### 任务间输入输出数据传递
+数据的传递细节其实都隐藏在 `python/fate_flow/worker/task_executor.py` 中的 `TaskExecutor._run_()` 方法执行过程中，我们只需要关注组件执行输出 `cpn_output` 的传递路径就可以发现，最终所有的输出会调用 `python/fate_flow/operation/job_tracker.py` 中的 `Tracker.save_output_data()` 方法进行持久化。
 
+```python
+def save_output_data(...):
+    if computing_table:
+        ...
 
+        # 输出数据持久化
 
+        session.Session.persistent(computing_table=computing_table,
+                                    namespace=output_table_namespace,
+                                    name=output_table_name,
+                                    schema=schema,
+                                    part_of_data=part_of_data,
+                                    engine=output_storage_engine,
+                                    engine_address=output_storage_address,
+                                    token=token)
+
+        return output_table_namespace, output_table_name
+```
+
+输出数据存储时会关联上对应的 `table_namespace` 和 `table_name`
+
+而组件输入数据的构造主要来自于 `TaskExecutor.get_task_run_args()`，其中可以看到获取对应的 `table_namespace` 和 `table_name` 然后获取对应的数据的流程，具体就不额外展开了。
+
+## 总结
+通过这篇文章的介绍，我们梳理了 FATE 作业执行的完整流程，简单总结下其中涉及的基础概念：
+
+1. FATE 作业提交的 dsl 文件中会定义作业中包含的组件（component）列表，FATE 会创建创建对应的作业（job）, 然后为每个组件生成对应的任务（task）。
+2. 每个任务（task）使用独立的进程进行执行，实际执行是根据组件对应的组件模块名确定对应的组件执行代码，实际的执行过程就是执行组件类中的 `run()` 方法；
+3. 任务执行的输出会被持久化存储，后续任务执行时可以使用前面任务执行的输出作为输入进行执行；
