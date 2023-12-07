@@ -1,7 +1,7 @@
 ---
 layout: post
-title: 'FATE 任务全流程探索 - 从任务提交至组件执行'
-subtitle:   "Exploration of the entire FATE task process - from task submission to component execution"
+title: 'FATE 作业执行全流程追踪'
+subtitle:   "Full process tracking of FATE job execution"
 date:       2023-12-04 22:00:00
 author:     "Bryan"
 header-mask: 0.3
@@ -13,12 +13,12 @@ tags:
 ---
 
 ## 背景信息
-在最初接触 FATE 源码时就整理过 [FATE Flow 源码解析 - 作业提交处理流程](https://zhuanlan.zhihu.com/p/667631987)，文章整理了 FATE 是如何接收用户提交的作业 (job)，然后将作业拆分为独立的任务 (task)，然后执行完成各个任务，在这个过程中不断更新作业的执行进度，直到最终完成整个作业。如果期望对 FATE 作业提交的执行流程有一个基础的认识，可以详细了解下之前的文章。
+在最初接触 FATE 源码时就整理过 [FATE Flow 源码解析 - 作业提交处理流程](https://zhuanlan.zhihu.com/p/667631987)，文章整理了 FATE 是如何接收用户提交的作业 (job)，然后将作业拆分为独立的任务 (task)，然后执行完成各个任务，在这个过程中不断更新作业(job)的执行进度，直到最终完成整个作业(job)。如果期望对 FATE 作业提交的执行流程有一个基础的认识，可以详细了解下之前的文章。
 
-这篇文章是前面文章的补充，期望进一步深入探索 FATE 中提交的作业(job)是如何被如何被拆分，以及各个任务是如何确定对应的执行代码，以及如何在任务之间完成数据的传递。期望读完这篇文章，提交的任何作业，都可以快速明确预期执行链路，出现问题也快速定位具体原因。
+这篇文章是前面文章的补充，期望进一步深入探索 FATE 中提交的作业(job)是如何被如何被拆分，以及各个任务是如何确定对应的执行代码，以及如何在任务之间完成数据的传递。期望读完这篇文章，提交的任何作业，都可以快速明确预期执行链路，出现问题也快速定位。
 
 ## 作业提交
-用户在使用 FATE 进行提交作业时，最重要的一个文件就是对应的 dsl 文件，其中包含了本次作业中包含的组件（component），组件是对复杂作业的分解，以之前描述过的纵向联邦线性回归为例，对应的 dsl 文件如下所示：
+用户在使用 FATE 提交作业时，最重要的一个文件就是对应的 dsl 文件，其中包含了本次作业中执行的组件列表（component），组件是对复杂作业的分解，以之前描述过的纵向联邦线性回归为例，对应的 dsl 文件如下所示：
 ```python
 {
     "components": {
@@ -92,20 +92,20 @@ tags:
 |  ----  | ----  |  ----  |
 | reader_0  | Reader | 数据读取 |
 | data_transform_0  | DataTransform | 数据转换 |
-| intersection_0  | Intersection | 集合求交 |
+| intersection_0  | Intersection | 数据集合求交 |
 | hetero_linr_0  | HeteroLinR | 纵向线性回归算法 |
 
 通过 dsl 可以很容易理解 FATE 纵向联邦线性回归的实现方案，整体的流程也比较清晰了。但是 FATE 是如何基于 dsl 运行的，这就是这篇文章关注的重点。
 
 ## 执行流程串联
-这边对 FATE 中作业的执行的完整流程进行串联，本文侧重于了解各个组件的执行流程，考虑到流程涉及的链路过多，因此会省略不必要的细节，如果希望关注作业执行流程，可以查看 [FATE Flow 源码解析 - 作业提交处理流程](https://zhuanlan.zhihu.com/p/667631987) 。
+这边对 FATE 中作业的执行的完整流程进行串联，本文侧重于了解作业内组件的执行流程，考虑到流程涉及的链路过多，因此会省略不必要的细节，可以结合 [FATE Flow 源码解析 - 作业提交处理流程](https://zhuanlan.zhihu.com/p/667631987) 补充作业执行细节。
 
 #### 作业提交
-用户提交对应的入口是 `python/fate_flow/apps/job_app.py` 中的 `submit_job()` 方法来实现，实际的处理为 `DAGScheduler.submit()` 完成。
+用户提交对应的入口是 `python/fate_flow/apps/job_app.py` 中的 `submit_job()` ，实际的处理由 `DAGScheduler.submit()` 完成。
 
-我们最重要的是跟踪 dsl 的流转过程，其中最重要的一部分内容就是 `FederatedScheduler.create_job()` 通知各个参与方去创建作业(job)与任务(tasks)。此方法内部封装的就是一个 RPC 请求，实际就是调用 `python/fate_flow/scheduling_apps/party_app.py` 中 `/<job_id>/<role>/<party_id>/create` 接口。
+我们最重要的是跟踪 dsl 数据的传递与处理过程，作业提交中最重要的一部分内容就是 `FederatedScheduler.create_job()` 通知各个参与方去创建作业(job)与任务(task)。此方法内部封装的就是一个 RPC 请求，实际调用 `python/fate_flow/scheduling_apps/party_app.py` 中 `/<job_id>/<role>/<party_id>/create` 接口。
 
-参与方中创建的 job 的流程就是写入数据库，而 task 最终的创建在 `python/fate_flow/controller/job_controller.py` 中，具体如下所示：
+参与方收到请求后会创建对应的作业（job）与任务（task）。任务的创建对应的实现在 `python/fate_flow/controller/job_controller.py` 中, 具体如下所示：
 
 ```python
 def initialize_task_holder_for_scheduling(cls, role, party_id, components, common_task_info, provider_info):
@@ -120,16 +120,18 @@ def initialize_task_holder_for_scheduling(cls, role, party_id, components, commo
                                     run_on_this_party=common_task_info["run_on_this_party"],
                                     task_info=task_info)
 ```
-可以看到，实际是通过遍历 `components` 创建 task，即每个组件 (component) 会对应一个 task。那么上面的例子中，纵向联邦线性回归会创建 4 个对应的 task，后续只需要深入了解 task 的执行流程对应的就是 component 的执行。
+可以看到，实际是通过遍历 `components` 依次创建 task，即每个组件 (component) 会对应创建一个 task。那么上面的例子中，纵向联邦线性回归会创建 4 个对应的 task，后续只需要深入了解任务（task）的执行流程对应的就是组件（component）的执行。图示如下所示：
+
+![create](/img/in-post/fate-task/create.png)
 
 #### 作业执行
 在作业创建完成后，会确定作业前置依赖是否完成，并执行对应的资源申请，直到一切就绪之后，才能开始调度执行。实际执行入口为 `python/fate_flow/scheduler/dag_scheduler.py` 中对应的 `DAGScheduler.run_do()` 方法，此方法执行 job 的状态流转，并将就绪的 job 调用 `schedule_running_job()` 运行起来。
 
-此方法会以 task 为单位执行 job，确定 task 相关的资源就绪后，最终会调用 `FederatedScheduler.start_task()` 通知各个参与方执行 task。这个同样是一个 RPC 请求，最终调用的是 `python/fate_flow/scheduling_apps/party_app.py` 文件中 `start_task()`，与前面创建 job 时的调用链路基本一致。
+此方法会以 task 为单位执行 job，确定 task 相关的资源就绪后，最终会调用 `FederatedScheduler.start_task()` 通知各个参与方执行 task。这个同样是一个 RPC 请求，最终调用的是 `python/fate_flow/scheduling_apps/party_app.py` 文件中 `start_task()` 执行任务，与前面创建 job 时的套路是一样的。
 
 参与方上 task 执行的是在 `TaskController.start_task()` 完成的，task 首先会选择执行引擎（Engine），目前 FATE 支持三种执行引擎 EGGROLL，SPARK，LINKIS_SPARK。
 
-不同的执行引擎预期实现的能力都是一致的，我们就以 FATE 自研的 [EggrollEngine](https://zhuanlan.zhihu.com/p/667636158) 为例，可以看到最终就是调用了 `python/fate_flow/manager/worker_manager.py` 中的 `WorkerManager.start_task_worker()` 完成 task 执行的，具体如下：
+不同的执行引擎只是执行环境上有差异，最终完成的事情都是一样的。下面以 FATE 自研的 [EggrollEngine](https://zhuanlan.zhihu.com/p/667636158) 为例，可以看到最终就是调用了 `python/fate_flow/manager/worker_manager.py` 中的 `WorkerManager.start_task_worker()` 完成 task 执行的，具体如下：
 
 ```python
     def start_task_worker(cls, worker_name, task: Task, task_parameters: RunParameters = None,
@@ -161,10 +163,10 @@ def initialize_task_holder_for_scheduling(cls, role, party_id, components, commo
                                          process_id=worker_id)
 ```
 
-可以看到，最终实际的执行可以等价于在命令行直接执行 `python3 python/fate_flow/worker/task_executor.py --job_id xxx --component_name xxx`，FATE 会在独立的进程直接执行对应的 python 脚本。而组件信息是通过命令行参数传递的。
+可以看到，最终实际的执行可以等价于在命令行直接执行 `python3 python/fate_flow/worker/task_executor.py --job_id xxx --component_name xxx`，FATE 会在独立的进程直接执行对应的 python 脚本。而作业 id 与组件名是通过命令行参数传递的。
 
 #### 任务执行流程
-任务执行实际上 `python/fate_flow/worker/task_executor.py` 中的 `TaskExecutor._run_()` 方法中完成的，最核心的功能就是根据组件名确定组件对应的模块，然后模块对应的代码。简化后如下所示：
+任务执行是在 `python/fate_flow/worker/task_executor.py` 中的 `TaskExecutor._run_()` 方法上完成的，最核心的功能就是根据组件名（component_name）确定组件对应的模块，然后确定模块对应的代码。简化后如下所示：
 
 ```python
 def _run_(self):
@@ -185,15 +187,15 @@ def _run_(self):
     cpn_output = run_object.run(cpn_input)
 ```
 
-而对应的可执行对象 `run_object` 到底是如何确定的呢？其对应的基类为 `python/fate_flow/components/_base.py` 中的 `ComponentMeta` 类，可以看到其中包含了 `get_run_obj()` 可以获取可执行对象，最终返回的是包含了 `run()` 方法的可执行对象。
+而对应的可执行对象 `run_object` 到底是如何确定的呢？其对应的基类为 `python/fate_flow/components/_base.py` 中的 `ComponentMeta` 类，可以看到其中包含了 `get_run_obj()` 可以获取可执行对象，此对象包含 `run()` 方法用于执行业务逻辑。
 
-而相关的组件的注册也是通过 `ComponentMeta` 类来完成的，FATE-Flow 中全局搜索可以看到对应的注册的使用：
+而相关的组件的注册也是通过 `ComponentMeta` 类来完成的，FATE-Flow 项目中全局搜索可以看到对应的组件列表：
 
 ![fateflow](/img/in-post/fate-task/fateflow.png)
 
-通过实际的注册代码可以看到实际注册 `ComponentMeta` 时使用的就是组件模块名，这也能理解为什么是通过组件模块名确定对应的实现模块的。
+通过上面的图示可以看到通过 `ComponentMeta` 注册组件时使用的就是组件模块名，这也能理解为什么是通过组件模块名确定对应的组件实现模块的。
 
-我们以上面使用的 `Reader` 组件为例来简单查看实现的结构，其对应的实现在 `python/fate_flow/components/reader.py` 中，其对应的实现简化后如下所示：
+我们以上面使用的 `Reader` 组件为例来简单查看实现的结构，其对应的实现在 `python/fate_flow/components/reader.py` 中：
 
 ```python
 reader_cpn_meta = ComponentMeta("Reader")
@@ -206,13 +208,15 @@ class Reader(ComponentBase):
 
 可以看到会使用组件模块名 `Reader` 初始化 `ComponentMeta` 对象，接下来使用 `@reader_cpn_meta.bind_runner` 装饰器绑定对应的执行对象，此对象会实现 `_run()` 方法，其中包含的就是主要的逻辑实现。
 
-查看对应的基类 `ComonentBase` 可以看到实现了其实现了 `run()` 方法，而此方法中会调用 `_run()` 完成主要的功能，因此也就能理解上面实际执行中 `run_object.run()` 的设计了。
+但是最终获取匹配组件时只会调用 `run()` 方法呀，秘密就藏在对应的基类 `ComonentBase` 中。 此基类实现了 `run()` 方法，而此方法中会调用 `_run()` 完成主要的功能，因此也就能理解上面实际执行中 `run_object.run()` 的设计了。
 
 
 #### 算法任务执行流程
-前面的 FATE-Flow 工程中图示中可以看到 `Reader` 对应的组件，但是其他的组件都没有看到，其对应的实现都是在 [FATE 项目](https://github.com/FederatedAI/FATE) 中的，FATE 项目中 `python/federatedml/components/components.py` 也存在一个基本一样的 `ComponentMeta` 类，作为所有组件的基类，大部分的算法组件都是实现在 FATE 项目中的。我们就以上面用到的 `HeteroLinR` 组件为例看看算法组件的实现。
+前面的 FATE-Flow 工程中图示中可以看到 `Reader` 对应的组件，但是纵向联邦线性回归中其他的组件都没有看到，其对应的实现都是在 [FATE 项目](https://github.com/FederatedAI/FATE) 中的。
 
-实际去查看 `HeteroLinR` 组件可以看到对应的实现与前面的 `Reader` 组件基本一样：
+深入查看 FATE 项目对应的实现，就会发现 FATE 项目中 `python/federatedml/components/components.py` 也存在一个基本一样的 `ComponentMeta` 类，用于组件的注册，而大部分的算法相关的组件都是实现在 FATE 项目中的。我们就以上面用到的 `HeteroLinR` 组件为例看看算法组件的实现。
+
+实际去查看 `HeteroLinR` 组件可以看到对应的注册方式与前面的 `Reader` 组件基本一样：
 
 ```python
 hetero_linr_cpn_meta = ComponentMeta("HeteroLinR")
@@ -228,7 +232,7 @@ def hetero_linr_runner_guest():
 
 ```
 
-实际去查看算法组件的实现类可能就会发现一些差异，以 `HeteroLinRGuest` 为例，可以看到实现的方法如下：
+实际去查看算法组件的实现类 `HeteroLinRGuest` 可能就会发现一些差异，可以看到实现的方法如下：
 
 ```python
 class HeteroLinRGuest(HeteroLinRBase):
@@ -239,9 +243,9 @@ class HeteroLinRGuest(HeteroLinRBase):
         ...
 ```
 
-实际的算法组件只实现了 `fit()` 与 `predict()` 方法，分别对应于算法训练与推理功能，根据前面的介绍，预期算法组件应该执行 `run()` 方法，追踪到算法组件的基类，位于 `python/federatedml/model_base.py` 中 `ModelBase` 类，在此类中就实现了 `run()` 方法，此方法同样是调用 `_run()` 完成主要功能。
+算法组件只实现了 `fit()` 与 `predict()` 方法，分别对应于算法训练与推理功能，根据前面的介绍，预期算法组件应该执行 `run()` 方法，一路追踪到算法组件的基类。此基类为位于 `python/federatedml/model_base.py` 中的 `ModelBase` ，在此类中就实现了 `run()` 方法，此方法同样是调用 `_run()` 完成主要功能。
 
-`ModelBase` 的 `_run()` 中会根据实际输入生成一个方法列表，然后依次执行。生成方法列表中最重要一部分实现在 `python/federatedml/util/component_properties.py` 中的 `ComponentProperties._train_process()` 中，具体如下：
+但是与前面的组件不同之处在于，`ModelBase` 的 `_run()` 中会根据实际输入生成一个方法列表，然后依次执行。生成方法列表中最重要一部分实现是 `python/federatedml/util/component_properties.py` 中的 `ComponentProperties._train_process()` 方法，具体如下：
 
 ```python
 def _train_process(self, running_funcs, model, train_data, validate_data, test_data, schema):
@@ -262,11 +266,11 @@ def _train_process(self, running_funcs, model, train_data, validate_data, test_d
     return running_funcs
 ```
 
-可以看到根据数据集的情况，会确定执行的方法，存在训练集的情况下，必然会执行 `fit()` 方法用于模型训练，而存在测试集的情况下就一定会生成 `predict()` 方法用于推理。看到这边也就能理解前面算法组件的实现了。
+可以看到根据数据集的不同，执行的方法列表也不同。存在训练集的情况下，会执行 `fit()` 方法用于模型训练，而存在测试集的情况下就一定会生成 `predict()` 方法用于推理。看到这边也就能理解前面算法组件的实现了。
 
 
 #### 任务间数据传递
-从前面的介绍可以知道，算法组件是通过独立进程执行的，考虑进程之间是隔离的，数据不能直接共享，那么就需要明确下数据是如何传递的呢？在单个作业中，一般任务很可能会依赖前面任务执行的输出作为后续任务的输入。比如 `DataTransform` 组件对应的任务需要执行数据转换，必然会依赖 `Reader` 组件对应的任务先读取到数据。
+从前面的介绍可以知道，算法组件是通过独立进程执行的，考虑进程之间是隔离的，数据不能直接共享，那么就需要明确下数据是如何传递的呢？实际作业执行中，后续任务的输入很有可能是前面任务执行的输出。比如 `DataTransform` 组件对应的任务需要执行数据转换，必然会依赖 `Reader` 组件对应的任务先读取到数据。
 
 数据的传递细节其实都隐藏在 `python/fate_flow/worker/task_executor.py` 中的 `TaskExecutor._run_()` 方法执行过程中，我们只需要关注组件执行输出 `cpn_output` 的传递路径就可以发现，最终所有的输出会调用 `python/fate_flow/operation/job_tracker.py` 中的 `Tracker.save_output_data()` 方法进行持久化。
 
@@ -291,11 +295,12 @@ def save_output_data(...):
 
 输出数据存储时会关联上对应的 `table_namespace` 和 `table_name`
 
-而组件输入数据的构造主要来自于 `TaskExecutor.get_task_run_args()`，其中可以看到获取对应的 `table_namespace` 和 `table_name` 然后获取对应的数据的流程，具体就不额外展开了。
+而组件输入数据的构造主要来自于 `TaskExecutor.get_task_run_args()`，深入实现可以看到获取对应的 `table_namespace` 和 `table_name` 然后获取对应的数据的流程，具体就不额外展开了，感兴趣的可以自行探索。
 
 ## 总结
-通过这篇文章的介绍，我们梳理了 FATE 作业执行的完整流程，简单总结下其中涉及的基础概念：
+通过这篇文章的介绍，我们梳理了 FATE 作业执行的完整流程，简单总结下其中涉及的关键信息：
 
-1. FATE 作业提交的 dsl 文件中会定义作业中包含的组件（component）列表，FATE 会创建创建对应的作业（job）, 然后为每个组件生成对应的任务（task）。
+1. FATE 作业提交的 dsl 文件中会定义作业中包含的组件（component）列表，FATE 收到请求后会创建对应的作业（job）, 然后为每个组件（component）生成对应的任务（task）。
 2. 每个任务（task）使用独立的进程进行执行，实际执行是根据组件对应的组件模块名确定对应的组件执行代码，实际的执行过程就是执行组件类中的 `run()` 方法；
-3. 任务执行的输出会被持久化存储，后续任务执行时可以使用前面任务执行的输出作为输入进行执行；
+3. 算法组件基类中会根据作业输入确定执行的方法列表， 存在训练数据集是会执行 `fit()` 进行训练，存在测试数据集时会执行 `predict()` 进行推理；
+4. 任务执行的输出会被持久化存储，后续任务执行时可以使用前面任务执行的输出作为输入进行执行；
