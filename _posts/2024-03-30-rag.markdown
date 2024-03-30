@@ -1,0 +1,177 @@
+---
+layout: post
+title: '从开发到部署，搭建离线私有大模型知识库'
+subtitle:   "From development to deployment, build an offline private large model knowledge base"
+date:       2024-03-30 12:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - LLM
+    - langchain
+---
+
+## 背景介绍
+最近一段时间搭建了一套完整的私有大模型知识库，目前完整的服务已经完成测试部署上线。基本之前的实践过程，从工程角度整理技术方案以及中间碰到的一些问题，方便后续对这个方向有需求的研发同学们。
+
+## 为什么做离线私有化部署
+在大模型火热起来之后，很多企业都有尝试相关服务。但是实际会碰到大模型不了解公司个性化的情况，无法给出针对公司情况给出个性化回答。因此就出现了针对大模型的知识库，通过提供公司内部的背景知识从而提升大模型个性化回答的能力。
+
+但是这个方案马上就碰到一个问题，大量公司的内部信息被泄露。因此大部分公司会选择使用私有化部署的模型，这样就解决了信息泄露问题，这就是私有化部署的企业知识库。
+
+部分企业数据更加敏感，基础数据的服务需要离线在内部运行，因此需要搭建离线的私有化部署的企业知识库。通过这一套服务，将企业内部散落的各种类型的文档知识组织起来，从而更好地为企业提供服务。
+
+## 技术方案
+目前大模型知识库的构建一般是使用检索增强生成 (RAG) 的技术方案，RAG 首先会检索与问题相关的文档，之后会将检索到的信息提供给大模型（LLM），LLM 使用它们来生成更准确、更相关的响应。RAG 有两个核心组件：
+
+- 检索组件：负责从外部知识库中检索与用户查询相关的信息。
+- 生成组件：负责生成最终响应。生成组件通常是 LLM，例如 GPT-3 或 ChatGLM 等；
+
+RAG 的常规流程如下所示：
+
+![process](/img/in-post/rag/langchain+chatglm.png)
+
+上面的流程图中，第 1~14 步对应于信息的检索，而第 15 步对应于响应的生成。可以看到 RAG 最核心的是信息检索。下面主要关注 RAG 的检索流程。
+
+RAG 的信息检索主要包含两个步骤：
+
+- 向量数据库的构建，对应于上面的 1~7 步，通过对原始的文件信息进行预处理，方便后续快速检索；
+- 用户查询流程，对应于上面的 8~15 步，通过用户查询获取匹配的信息，通过构造生成合适的 prompt，提供给大模型得到最终的结果；
+
+#### 向量数据库的构建
+向量数据库的构建主要包含下面的步骤：
+
+1. 本地文件的加载，实际中文件的类型可能比较多样化，需要根据文件类型选择对应的加载器。文件加载需要去除无关的信息，从而保证后续的高效处理；
+2. 文件切分，单个文件的内容可能会过大，考虑到大模型实际可用的输入有限，一般会对加载的原始文件执行切分，得到对应的文件块；
+3. 文件块向量化，为了方便后续根据用户查询匹配对应的文件块，因此会进行文件块的向量化，这样就根据查询数据的向量与文件块的向量之间的差异确定匹配的文件块；
+4. 向量库的构建，基于向量化后的文件块构建向量数据库，后续就可以在向量数据库中进行查询；
+
+#### 用户检索流程
+用户检索的流程主要包含下面的核心步骤：
+
+1. 向量化查询语句，从向量数据库中获取匹配的文件块；
+2. 将匹配的文件块与用户的查询语句合并构造为完整的 prompt；
+3. 基于 prompt 发起 LLM 查询，获得 LLM 响应；
+
+上面的流程包含 RAG 的核心流程，如果希望提升 RAG 的效果，需要对流程中的特定环境进行优化。
+
+## 方案落地
+为了实现完整的 RAG 框架，常规的方案是基于 [langchain](https://python.langchain.com/docs/get_started/introduction) 进行开发，langchain 提供了不同格式的文件处理的封装，可以快速切换不同的 LLM 从而迭代调优效果。
+
+但是实际中我选择了对 langchain 进行了二次封装的 [Langchain-Chatchat](https://github.com/chatchat-space/Langchain-Chatchat)，完整看完 Langchain-Chatchat 的实现后，感觉相对完善，适合作为开箱即用的 RAG 服务。
+
+更友好的是，Langchain-Chatchat 提供了在线大模型 API 的接入，因此可以在没有强大 GPU 服务器的个人笔记本上运行起来，方便快速测试，当部署至性能更强大的 GPU 服务器上，可以通过修改配置简单切换为私有化部署的大模型。
+
+RAG 的实现需要接入向量化模型（Embedder model）与大语言模型（LLM），Langchain-Chatchat 推荐的是 [bge-large-zh](https://huggingface.co/BAAI/bge-large-zh) 和 [chatglm3-6b](https://huggingface.co/THUDM/chatglm3-6b) 组合。最初为了在本地环境快速启动起来选择的是百度提供 Embedding-V1 和 ERNIE-Bot 模型进行测试。
+
+#### 评估体系
+实现了基础版本的 RAG 服务后，如何迭代提升服务效果呢？
+
+RAG 的响应只是非结构化的文本，无法评估正确性。而且 RAG 涉及大量的环节，无法确定是什么模块导致了最终效果不佳。调优的第一步就是先进行量化评估，然后才能在此基础上进行迭代。
+
+评估体系的构建可以参考吴恩达的课程 [构建和评估高级的RAG模型应用](https://www.bilibili.com/video/BV1494y1E7H9/?p=2&spm_id_from=pageDriver&vd_source=7b994c4c6ab1cc3449aaae9c1ca56843)，通过下面的三维度进行评估：
+
+![evaluation](/img/in-post/rag/evaluation.png)
+
+1. Context Relevance: 上下文相关性，评估检索获得的内容与问题的相关性，通过这个指标可以确认检索模块是否检索到了相关的内容，如果当前指标评分较低，则需要考虑调优向量库构建的环节；
+2. Groundedness: 立足性，答案是否是基于上下文推测出来的，如果评分较低，可以考虑调优 prompt 构造或大模型；
+3. Answer Relevance: 答案的相关性，评估系统是否答非所问，如果指标评分较低，则需要考虑调优大模型；
+
+评估系统可以基于下面的开源库实现：
+
+- [ragas](https://github.com/explodinggradients/ragas)
+- [trulens](https://github.com/truera/trulens)
+- [phoenix](https://github.com/Arize-ai/phoenix)
+- [llamaindex](https://docs.llamaindex.ai/en/stable/optimizing/evaluation/evaluation/)
+
+我实际选择的是 ragas，可以在现有服务之外使用独立的模块进行服务的评估，简化后的实现如下所示：
+
+```python
+# 将评估系统的问题 questions 与问题预期的答案 ground_truths 合并构造出评估数据集
+
+async def batch_evaluate_chat(questions: list[str],
+                              ground_truths: Optional[list] = None):
+    tasks = [
+        search_knowledge_base_iter(q, ground_truth)
+        for q, ground_truth in zip(questions, ground_truths)
+    ]
+    results = await asyncio.gather(*tasks)
+
+    question_list, answer_list, contexts_list, ground_truth_list = [], [], [], []
+    for question, answer, contexts, ground_truth in results:
+        question_list.append(question)
+        answer_list.append(answer)
+        contexts_list.append(contexts)
+        ground_truth_list.append(ground_truth)
+
+    data_samples = {
+        'question': question_list,
+        'answer': answer_list,
+        'contexts': contexts_list,
+    }
+
+    if contain_data(ground_truth_list):
+        data_samples["ground_truth"] = ground_truth_list
+
+    return Dataset.from_dict(data_samples)
+
+# 选择指标 context_relevancy, faithfulness, answer_relevancy 进行评估
+
+async def evaluate_data():
+    dataset = await batch_evaluate_chat(QUESTIONS, GROUND_TRUTH)
+
+    result = evaluate(
+        dataset,
+        metrics=[
+            context_relevancy,
+            faithfulness,
+            answer_relevancy,
+        ],
+    )
+    return result
+
+```
+
+通过使用上面的 `evaluate_data()` 可以批量指定问题与答案评估系统的可靠性。
+
+#### 向量化调优
+初始版本进行评估后实际效果一般，得分不佳主要在于 `Context Relevance` 指标得分较差，部分问题得分甚至低于 0.1。表明没有获取到正确内容，调研后找到 huggingface 上的 [向量化模型榜单](https://huggingface.co/spaces/mteb/leaderboard)，根据榜单选择了表现良好而且相对轻量的模型库 [stella-base-zh-v3-1792d](https://huggingface.co/infgrad/stella-base-zh-v3-1792d)
+
+直接在本地的个人笔记本上进行测试，加载没有太大的压力，而且向量化模型推理的速度较快，看起来没有 GPU 情况下推理模型的离线部署问题不大。切换后再次进行评估，同样的问题 `Context Relevance` 得分提高为 0.6 甚至到达 0.8，看起来检索的质量得到了明显提高。
+
+
+## 离线部署
+部分企业内部部署的服务是完全无法联网的，只能通过跳板机进行部署。那么如何将完整的 Python 运行环境部署就需要特殊设计了。
+
+#### Python 虚拟环境部署
+实际选择 conda 进行虚拟环境的离线迁移，因为 conda 提供了 [conda-pack](https://conda.github.io/conda-pack/) 用于将本地创建的 Python 虚拟环境进行打包，之后就可以在离线环境下解压缩正常使用。
+
+打包虚拟环境时要特别注意，如果需要在 GPU 服务器上运行，那么安装虚拟环境时需要安装对应的版本 torch, torchvision, torchaudio 和 xformers。而 GPU 版本的虚拟环境安装需要匹配服务器的 cuda 与 python 版本，如果版本不匹配，很可能会导致无法正确运行。
+
+GPU 版本的运行环境的安装还是有点折磨人的，不过网上已经有相关信息了，这边就不额外展开了。
+
+#### 缺失离线包安装
+在实际执行服务时，报错 `libGL.so.1` 缺失，看起来是需要安装 `libgl1-mesa-dev`，联网环境下是相对容易解决的，可以直接 `apt-get install` 安装，但是离线就相对费劲，不过还好我们有 `apt-get download`，看起来直接下载之后通过 `dpkg` 安装。
+
+但是实际发现安装此包时会出现间接依赖缺失，接下来继续 `apt-get download` 安装缺失的间接依赖，传递至服务器，发现间接依赖还存在间接依赖，而且缺失的数量极大，手工下载看起来不可行。 是否存在一次性获取包所有间接的依赖的方案呢？
+
+答案是 YES，可以使用 `apt-rdepends`，通过获取所有的间接依赖然后批量下载，一次性传输至服务器上，即可离线安装，对应的命令如下所示：
+
+```bash
+sudo apt-get install apt-rdepends
+apt-rdepends libgl1-mesa-dev | grep -v "^ " > dependencies
+cat dependencies | xargs -I {} apt-get download {}
+```
+
+之后就可以在服务器上可以通过下面的命令一次性安装所有的依赖：
+
+```bash
+sudo dpkg -i *.deb
+```
+
+基于此命令顺利安装所有的依赖。
+
+
+## 总结
+本文是搭建离线私有大模型知识库的一次完整实践，整理了主要的实现方案以及离线部署中碰到的一些问题，记录的版本还是一个初步验证版本，知识库的实践还需要对中间环节进行大量调优，目前存在大量的论文进行这方面的研究，个人目前也在持续进行多轮的迭代调优，后续会持续整理和分享中间碰到的有价值的内容，欢迎持续关注。
