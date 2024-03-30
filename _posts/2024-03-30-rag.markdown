@@ -16,7 +16,7 @@ tags:
 最近一段时间搭建了一套完整的私有大模型知识库，目前完整的服务已经完成测试部署上线。基本之前的实践过程，从工程角度整理技术方案以及中间碰到的一些问题，方便后续对这个方向有需求的研发同学们。
 
 ## 为什么做离线私有化部署
-在大模型火热起来之后，很多企业都有尝试相关服务。但是实际会碰到大模型不了解公司个性化的情况，无法给出针对公司情况给出个性化回答。因此就出现了针对大模型的知识库，通过提供公司内部的背景知识从而提升大模型个性化回答的能力。
+在大模型火热起来之后，很多企业都有尝试相关服务。但是实际会碰到大模型不了解公司个性化的情况，无法针对公司情况给出个性化回答。因此就出现了针对大模型的知识库，通过提供公司内部的背景知识提升大模型个性化回答的能力。
 
 但是这个方案马上就碰到一个问题，大量公司的内部信息被泄露。因此大部分公司会选择使用私有化部署的模型，这样就解决了信息泄露问题，这就是私有化部署的企业知识库。
 
@@ -57,18 +57,18 @@ RAG 的信息检索主要包含两个步骤：
 上面的流程包含 RAG 的核心流程，如果希望提升 RAG 的效果，需要对流程中的特定环境进行优化。
 
 ## 方案落地
-为了实现完整的 RAG 框架，常规的方案是基于 [langchain](https://python.langchain.com/docs/get_started/introduction) 进行开发，langchain 提供了不同格式的文件处理的封装，可以快速切换不同的 LLM 从而迭代调优效果。
+为了实现完整的 RAG 框架，常规的方案是基于 [langchain](https://python.langchain.com/docs/get_started/introduction) 开发，langchain 提供了不同格式的文件处理的封装，而且可以快速切换不同的 LLM 从而迭代调优 RAG 系统的效果。
 
-但是实际中我选择了对 langchain 进行了二次封装的 [Langchain-Chatchat](https://github.com/chatchat-space/Langchain-Chatchat)，完整看完 Langchain-Chatchat 的实现后，感觉相对完善，适合作为开箱即用的 RAG 服务。
+但是实际中我选择了对 langchain 进行了二次封装的 [Langchain-Chatchat](https://github.com/chatchat-space/Langchain-Chatchat)，完整看完 Langchain-Chatchat 的实现后，感觉此项目相对完善，适合作为开箱即用的 RAG 服务。
 
-更友好的是，Langchain-Chatchat 提供了在线大模型 API 的接入，因此可以在没有强大 GPU 服务器的个人笔记本上运行起来，方便快速测试，当部署至性能更强大的 GPU 服务器上，可以通过修改配置简单切换为私有化部署的大模型。
+更友好的是，Langchain-Chatchat 提供了在线大模型 API 的接入，因此可以在没有强大 GPU 服务器的个人笔记本上运行起来，方便快速测试，当部署至性能更强大的 GPU 服务器上，可以通过修改配置快速切换为私有化部署的大模型。
 
-RAG 的实现需要接入向量化模型（Embedder model）与大语言模型（LLM），Langchain-Chatchat 推荐的是 [bge-large-zh](https://huggingface.co/BAAI/bge-large-zh) 和 [chatglm3-6b](https://huggingface.co/THUDM/chatglm3-6b) 组合。最初为了在本地环境快速启动起来选择的是百度提供 Embedding-V1 和 ERNIE-Bot 模型进行测试。
+RAG 的实现需要接入向量化模型（Embedder model）与大语言模型（LLM），Langchain-Chatchat 推荐的是 [bge-large-zh](https://huggingface.co/BAAI/bge-large-zh) 和 [chatglm3-6b](https://huggingface.co/THUDM/chatglm3-6b) 组合。为了在本地环境快速启动，我选择的是百度提供 Embedding-V1 和 ERNIE-Bot 模型进行测试。
 
 #### 评估体系
 实现了基础版本的 RAG 服务后，如何迭代提升服务效果呢？
 
-RAG 的响应只是非结构化的文本，无法评估正确性。而且 RAG 涉及大量的环节，无法确定是什么模块导致了最终效果不佳。调优的第一步就是先进行量化评估，然后才能在此基础上进行迭代。
+RAG 的响应是非结构化的文本，无法评估正确性。而且 RAG 涉及大量的环节，无法确定是什么模块导致了最终效果不佳。调优的第一步就是先进行量化评估，然后才能在此基础上进行迭代。
 
 评估体系的构建可以参考吴恩达的课程 [构建和评估高级的RAG模型应用](https://www.bilibili.com/video/BV1494y1E7H9/?p=2&spm_id_from=pageDriver&vd_source=7b994c4c6ab1cc3449aaae9c1ca56843)，通过下面的三维度进行评估：
 
@@ -133,12 +133,14 @@ async def evaluate_data():
 
 ```
 
-通过使用上面的 `evaluate_data()` 可以批量指定问题与答案评估系统的可靠性。
+通过使用上面的 `evaluate_data()` 可以预设的问题和答案用于评估系统的可靠性。
 
 #### 向量化调优
-初始版本进行评估后实际效果一般，得分不佳主要在于 `Context Relevance` 指标得分较差，部分问题得分甚至低于 0.1。表明没有获取到正确内容，调研后找到 huggingface 上的 [向量化模型榜单](https://huggingface.co/spaces/mteb/leaderboard)，根据榜单选择了表现良好而且相对轻量的模型库 [stella-base-zh-v3-1792d](https://huggingface.co/infgrad/stella-base-zh-v3-1792d)
+初始版本进行评估后实际效果一般，得分不佳主要在于 `Context Relevance` 指标得分较差，部分问题得分甚至低于 0.1,表明没有获取到正确内容。
 
-直接在本地的个人笔记本上进行测试，加载没有太大的压力，而且向量化模型推理的速度较快，看起来没有 GPU 情况下推理模型的离线部署问题不大。切换后再次进行评估，同样的问题 `Context Relevance` 得分提高为 0.6 甚至到达 0.8，看起来检索的质量得到了明显提高。
+调研后找到 huggingface 上的 [向量化模型榜单](https://huggingface.co/spaces/mteb/leaderboard)，根据榜单选择了表现良好而且相对轻量的模型库 [stella-base-zh-v3-1792d](https://huggingface.co/infgrad/stella-base-zh-v3-1792d)，基于此向量化模型进行了测试。
+
+实际使用个人开发笔记本进行测试，加载模型没有压力，而且向量化模型推理的速度较快，看起来没有 GPU 情况下推理模型的离线部署问题不大。切换后再次进行评估，同样的问题 `Context Relevance` 得分提高为 0.6 甚至到达 0.8，看起来检索的质量得到了明显提高。从实际的答案来看，质量也得到了明显提升。
 
 
 ## 离线部署
@@ -149,14 +151,14 @@ async def evaluate_data():
 
 打包虚拟环境时要特别注意，如果需要在 GPU 服务器上运行，那么安装虚拟环境时需要安装对应的版本 torch, torchvision, torchaudio 和 xformers。而 GPU 版本的虚拟环境安装需要匹配服务器的 cuda 与 python 版本，如果版本不匹配，很可能会导致无法正确运行。
 
-GPU 版本的运行环境的安装还是有点折磨人的，不过网上已经有相关信息了，这边就不额外展开了。
+GPU 版本的运行环境的安装还是有点折磨人的，不过网上相关信息已经很多了，这边就不额外展开了。
 
 #### 缺失离线包安装
-在实际执行服务时，报错 `libGL.so.1` 缺失，看起来是需要安装 `libgl1-mesa-dev`，联网环境下是相对容易解决的，可以直接 `apt-get install` 安装，但是离线就相对费劲，不过还好我们有 `apt-get download`，看起来直接下载之后通过 `dpkg` 安装。
+在实际执行服务时，报错 `libGL.so.1` 缺失，看起来是需要安装 `libgl1-mesa-dev`，联网环境下是相对容易解决的，可以直接 `apt-get install` 安装，但是离线就很费劲了。初始情况下我考虑使用 `apt-get download`，直接下载之后通过 `dpkg` 安装。
 
-但是实际发现安装此包时会出现间接依赖缺失，接下来继续 `apt-get download` 安装缺失的间接依赖，传递至服务器，发现间接依赖还存在间接依赖，而且缺失的数量极大，手工下载看起来不可行。 是否存在一次性获取包所有间接的依赖的方案呢？
+但是实际发现安装此包时会出现间接依赖缺失，接下来继续 `apt-get download` 安装缺失的间接依赖，将间接依赖传递至服务器进行安装。发现间接依赖还存在间接依赖，而且缺失的间接依赖数量很多，手工下载看起来不可行。 是否存在一次性获取`libgl1-mesa-dev` 所有间接的依赖的方案呢？
 
-答案是 YES，可以使用 `apt-rdepends`，通过获取所有的间接依赖然后批量下载，一次性传输至服务器上，即可离线安装，对应的命令如下所示：
+答案是 YES，可以使用 `apt-rdepends`，通过获取所有的间接依赖然后批量下载，一次性传输至服务器上，即可离线安装，实践测试正确的命令如下所示：
 
 ```bash
 sudo apt-get install apt-rdepends
@@ -164,14 +166,14 @@ apt-rdepends libgl1-mesa-dev | grep -v "^ " > dependencies
 cat dependencies | xargs -I {} apt-get download {}
 ```
 
-之后就可以在服务器上可以通过下面的命令一次性安装所有的依赖：
+将本地的所有 deb 文件打包传输至服务器，之后就可以在服务器上可以通过下面的命令一次性安装所有的依赖：
 
 ```bash
 sudo dpkg -i *.deb
 ```
 
-基于此命令顺利安装所有的依赖。
+使用此命令顺利安装所需的依赖。
 
 
 ## 总结
-本文是搭建离线私有大模型知识库的一次完整实践，整理了主要的实现方案以及离线部署中碰到的一些问题，记录的版本还是一个初步验证版本，知识库的实践还需要对中间环节进行大量调优，目前存在大量的论文进行这方面的研究，个人目前也在持续进行多轮的迭代调优，后续会持续整理和分享中间碰到的有价值的内容，欢迎持续关注。
+本文是搭建离线私有大模型知识库的一次完整实践，整理了主要的实现方案以及离线部署中碰到的一些问题，记录的版本还是一个初步验证版本，知识库的实践还需要对中间环节进行大量调优，目前存在大量的论文进行这方面的研究，个人也在持续进行多轮的迭代调优，后续会持续整理和分享中间碰到的有价值的内容，欢迎持续关注。
