@@ -1,0 +1,36 @@
+---
+layout: post
+title: '向量数据库 Faiss 的产品化实践'
+subtitle:   "Productization practice of vector database faiss"
+date:       2024-04-23 12:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - langchain
+    - faiss
+---
+
+## 背景介绍
+在构建大模型知识库，即检索增强生成 (RAG) 服务时，中间存在一个重要的环境就是向量化搜索，而向量化搜索的实现避免依赖第三方向量数据库，那么开源的 Faiss 就是一个不错的选择。
+
+Faiss 是 FaceBook 提供的开源向量库搜索库，在 [Github](https://github.com/facebookresearch/faiss) 上已经有 28.1k star，是一个相对成熟的向量化搜索方案。
+
+目前构建的 RAG 服务就是使用 Faiss 提供的向量化搜索服务，Faiss 使用简单而且功能强大，但是在实际产品化的过程中依旧发现了一些不足之处，在实践过程中进行了必要的迭代调整，本文主要对过程中存在的问题和解决方案进行了整理。
+
+
+## Faiss 问题
+Faiss 的向量数据库的文件是直接保存在本地磁盘中的，使用 `index.faiss` 和 `index.pkl` 进行保存。这样迁移起来比较方便，但是构建 RAG 服务时存在如下问题：
+
+1. 多线程并发写入 Faiss 文件时会存在冲突，可能会导致 Faiss 本地的向量库文件被损坏；
+2. Faiss 查询与 Faiss 写入并行执行，Faiss 写入导致的异常可能会导致 Faiss 查询服务不可用；
+
+问题主要都集中在 Faiss 本地文件的管理问题，需要进行有针对性的优化；
+
+
+## Faiss 多线程写入
+
+为了解决 Faiss 多线程并发写入的问题，需要将 Faiss 转换为一个线程安全的 Faiss，此时就可以通过线程锁进行封装，对外总是提供一个线程安全的 Faiss 对象即可。
+
+
