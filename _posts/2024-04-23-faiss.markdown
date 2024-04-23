@@ -33,4 +33,46 @@ Faiss 的向量数据库的文件是直接保存在本地磁盘中的，使用 `
 
 为了解决 Faiss 多线程并发写入的问题，需要将 Faiss 转换为一个线程安全的 Faiss，此时就可以通过线程锁进行封装，对外总是提供一个线程安全的 Faiss 对象即可。
 
+实现的封装如下所示：
 
+```python
+import os
+import threading
+from contextlib import contextmanager
+
+from langchain.vectorstores.faiss import FAISS
+
+
+class ThreadSafeFaiss:
+    def __init__(self, obj: FAISS = None):
+        self._obj = obj
+        self._lock = threading.RLock()
+
+    @contextmanager
+    def acquire(self):
+        try:
+            self._lock.acquire()
+            yield self._obj
+        finally:
+            self._lock.release()
+
+    def docs_count(self) -> int:
+        return len(self._obj.docstore._dict)
+
+    def save_local(self, path: str):
+        with self.acquire():
+            if not os.path.isdir(path):
+                os.makedirs(path)
+            ret = self._obj.save_local(path)
+        return ret
+
+    def delete(self):
+        ret = []
+        with self.acquire():
+            ids = list(self._obj.docstore._dict.keys())
+            if ids:
+                ret = self._obj.delete(ids)
+        return ret
+```
+
+在上面的实现中，通过内部封装线程锁 `threading.RLock`，避免了多线程写入 Faiss 时彼此影响导致向量库写入磁盘的文件出现冲突的问题。
