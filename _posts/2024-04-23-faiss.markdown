@@ -17,24 +17,24 @@ tags:
 
 Faiss 是 FaceBook 提供的开源向量库搜索库，在 [Github](https://github.com/facebookresearch/faiss) 上已经有 28.1k star，相对成熟而且使用方便。
 
-目前构建的 RAG 服务使用的就是 Faiss 提供的向量化搜索服务，Faiss 功能强大，上手简单。但是在实际产品化的过程中依旧发现了一些不足之处，在实践过程中进行了必要的迭代增强，本文主要对过程中存在的问题和解决方案进行了整理。
+之前构建的 RAG 服务使用的就是 Faiss 提供的向量化搜索服务，Faiss 功能强大，上手简单。但是在实际产品化的过程中发现了不少不足，在实践过程中进行了必要的迭代增强，本文就是对这个过程的记录。
 
 
 ## Faiss 问题
 向量数据库 Faiss 的数据是直接存储在本地磁盘中的，使用 `index.faiss` 和 `index.pkl` 进行保存。和 SQLite 的使用类似。
 
-数据的迁移相对方便，但是作为向量数据库在生产环境使用时就会存在一些问题：
+这样的好处是设计简单，迁移方便。但是作为向量数据库在生产环境使用时就会暴露出下面的问题：
 
-1. 多线程并发写入 Faiss 文件时会存在冲突，可能会导致 Faiss 本地的向量库文件被损坏（血泪教训）；
-2. Faiss 读写使用同样的文件，写入异常会导致 Faiss 查询服务完全不可用；
+1. 多线程并发写入 Faiss 文件时会存在冲突，可能会导致 Faiss 本地的向量库文件被损坏；
+2. 主从库读写分离，Faiss 读写使用同样的文件，写入异常会导致 Faiss 查询服务完全不可用（教训惨痛）；
 3. 所有的向量数据都存储在同一个向量库中, 无法支持类似数据库分库分表查询的能力；
 
-如果真正希望在生产环境用上 Faiss，必然会需要进行必要的加强
+如果希望在生产环境用上 Faiss 向量库，必然会需要进行必要的增强
 
 
 ## Faiss 多线程安全
 
-为了解决 Faiss 多线程并发写入的问题，需要将 Faiss 转换为一个线程安全的 Faiss。
+为了解决 Faiss 多线程并发写入时的异常，需要将 Faiss 转换为一个线程安全的 Faiss。
 
 可以基于线程锁进行封装，外部总是使用线程安全的 Faiss 对象，避免多线程写入导致向量库文件损坏最终导致不可用。实现的封装简化后如下所示：
 
@@ -76,13 +76,13 @@ class ThreadSafeFaiss:
         return ret
 ```
 
-在上面的实现中，通过内部封装线程锁 `threading.RLock`，避免了多线程写入 Faiss 时互相影响导致向量库写入磁盘的文件出现异常的问题。
+在上面的实现中，通过内部封装线程锁 `threading.RLock`，避免了多线程写入时互相影响导致向量库写入本地的文件出现异常。
 
 
-## Faiss 后台写入影响 Faiss 服务化
-作为一个 RAG 服务，后台会持续有新的文档入库，需要在后台进行向量化并插入，而前台用户会持续进行向量查询，需要依赖 Faiss 提供查询服务。
+## Faiss 主从库读写分离
+作为一个 RAG 服务，后台会持续有新的文档入库，需要在后台进行向量化并插入，而前台用户会持续进行向量查询，需要依赖 Faiss 持续提供查询服务。
 
-而后台的 Faiss 插入过程中出现异常可能会导致不完整的 Faiss 向量数据写入，进而导致整个 Faiss 查询无法使用，影响线上服务。
+当后台的 Faiss 插入过程中出现异常导致不完整的 Faiss 向量数据写入，常规情况下可能会导致 Faiss 查询无法使用，影响线上用户。
 
 在经历过类似的惨痛教训导致被迫重建向量库之后，参考数据库的设计思路，实现主库写入，从库查询的能力。将封装简化后如下所示：
 
@@ -123,7 +123,7 @@ def new_vector_store(
     return vector_store
 
 
-# 从本地文件中构建向量库
+# 从本地文件中加载向量库
 
 def do_load_exist_vector_store(
     vs_path: str,
@@ -139,7 +139,7 @@ def do_load_exist_vector_store(
     return vector_store
 
 
-# 加载向量库, master 决定获取离线写入的主库或提供服务的从库
+# 加载向量库, 使用 master 参数确定使用主库还是从库
 
 def load_vector_store(
     embed_model: str,
@@ -148,7 +148,7 @@ def load_vector_store(
     global master_faiss
     global slave_faiss
 
-    # 从库提供向量检索服务
+    # 使用从库提供向量检索服务
 
     if not master:
         if slave_faiss:
@@ -163,7 +163,7 @@ def load_vector_store(
         slave_faiss = ThreadSafeFaiss(vector_store)
         return slave_faiss
 
-    # 主库用于提供向量更新能力
+    # 使用主库提供向量更新能力
 
     if master_faiss:
         return master_faiss
@@ -184,15 +184,15 @@ def load_vector_store(
 
 ```
 
-通过上面的 `load_vector_store()` 方法可以获取向量库的读写向量库，向量的更新会更新在主库 `master_faiss`， 而实际的查询是由从库 `slave_faiss` 提供，避免主库的更新过程中的异常导致查询服务不可用
+通过上面的 `load_vector_store()` 方法可以获取向量库的读写向量库，向量的增删会先在主库 `master_faiss` 完成， 而实际的查询是由从库 `slave_faiss` 提供，避免主库的更新过程中的异常导致查询服务不可用
 
-在主库完成了数据更新后可以执行 `shutil.copytree()` 将主库的数据同步至从库中，并执行从库 `slave_faiss` 的重新加载。
+在主库完成了数据更新后，可以执行 `shutil.copytree()` 将主库的本地的数据同步至从库对应的本地路径，并执行从库 `slave_faiss` 的重新加载。
 
 
 ## Faiss 分表数据隔离
 在 Faiss 使用过程中，所有的数据都放在一起，实际的 RAG 服务构建中，会需要支持知识库的隔离，因此需要拓展现有的 Faiss 数据隔离的能力。
 
-拓展的过程中可以实现一个 Faiss 对象缓存池，根据 key 区分不同的 Faiss 对象，Faiss 本地的数据根据 key 进行分离，简化后的实现如下所示：
+拓展的过程中可以实现一个 Faiss 对象缓存池，根据 key 区分不同的 Faiss 对象，Faiss 数据在本地存储的路径根据 key 确定，简化后的实现如下所示：
 
 ```python
 
@@ -273,7 +273,7 @@ class CachePool:
 
         return faiss_obj
 
-    # 将 master 数据同步至 slave，并将缓存中的 slave 数据失效, 下次获取的就是最新的数据
+    # 将 master 数据同步至 slave，并将缓存中的 slave 数据失效, 下次获取的就是 slave 最新的数据
 
     def sync_master_to_slave(self, key: str):
         slave_key = key
@@ -289,11 +289,11 @@ class CachePool:
 
 ```
 
-在上面的实现中，通过调用 `load_vector_store_from_pool()` 方法可以获取对应的 Faiss 对象，并可以调用 `sync_master_to_slave()` 实现 master 到 slave 向量数据库的同步。
+在上面的实现中，通过调用 `load_vector_store_from_pool()` 方法可以获取对应的 Faiss 对象，并提供 `sync_master_to_slave()` 用于 master 到 slave 向量数据库的同步。
 
 
 ## 总结
-本文实际是对 RAG 实现过程中向量数据库 Faiss 的增强思路，Faiss 虽然简单而强大，但是如果将其作为一个向量数据库应用于生产环境，就会存在明显的鲁棒性不够强的问题。
+本文实际是对 RAG 实现过程中向量数据库 Faiss 的增强思路，Faiss 虽然简单而强大，但是如果将其作为一个向量数据库应用于生产环境，就会存在一些明显的问题。
 
-本文的是在实践中对于 Faiss 本身存在的几个问题进行了定向的优化，解决了向量库数据库 Faiss 使用过程中的高频痛点，希望对大家有所助益。
+本文是在实践中对于 Faiss 本身存在的几个问题进行了定向的优化，解决了向量库数据库 Faiss 使用过程中的高频痛点，希望对大家有所助益。
 
