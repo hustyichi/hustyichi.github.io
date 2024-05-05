@@ -1,0 +1,295 @@
+---
+layout: post
+title: '一种与众不同的 RAG 架构探索'
+subtitle:   "An exploration of a distinctive RAG architecture"
+date:       2024-05-02 22:30:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - rag
+    - dspy
+---
+
+## 背景介绍
+在设计检索增强生成 (RAG) 架构时，目前常规的技术方案是基于 LangChain + Faiss 的架构。
+
+这样的架构好处很明显，基于 LangChain 框架可以快速接入大模型，并可以充分利用 LangChain 内置的各个环节的处理能力，利用 Faiss 可以支持离线的向量库构建，简单方便。Faiss 原生的框架可能存在一些薄弱之处，之前的 [向量数据库 Faiss 的实践与增强探索](https://zhuanlan.zhihu.com/p/694282145) 也有探索过对应的增强手段。
+
+但是在生产实践中，这个架构依旧会存在一些明显的不便之处：
+
+1. 基于 LangChain 的框架去应用大模型时，大量依赖 prompt 的构造，比如在实现 RAG 的 `MultiQuery Retriever` 时，LangChain 就实现一个 prompt 告知大模型需要根据原始 query 生成 3 个类似 query 用于 RAG 的查询，在实现 `Rewrite` 机制时，LangChain 中就需要实现 prompt 告知大模型执行 query 的重写用于提升 RAG 查询效果，而 prompt 机制本身是相对脆弱和不可靠的，因此整体的功能都比较脆弱；
+2. Faiss 向量库检索时，将所有需要检索的内容向量化放入特定的向量库中，后续具备查询与特定向量最接近的 topK 的能力，但是如果希望与业务结合，比如获取向量库中符合特定条件筛选后的 topK 的能力就会很困难，比如构建了医院所有病例的向量库，通过特定的查询手段可以查到最接近的病例。但是如果已知查询的内容只涉及妇产科，希望只从妇产科的病例查找 topK，Faiss 的向量库就会有心无力。因此与业务库结合就相对困难。
+
+## 新的 RAG 技术架构
+针对上面提到的两大痛点，本文提出一种新的 RAG 技术框架，主要用于解决上面碰到的问题，基于的架构为 [Dspy](https://github.com/stanfordnlp/dspy) + [Mongo Atlas Vector Search](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-overview/)
+
+#### Dspy
+Dspy 是一个由斯坦福大学 NLP 研究人员开发的框架，旨在通过编程而非手工提示（prompting）来解决基于大型语言模型（LLM）的应用程序的脆弱性问题。
+
+Dspy 的最简单的使用流程如下所示：
+
+1、定义签名（Signature）：
+
+签名描述了描述了任务以及对应的输入，输出，一个简单示例如下所示：
+
+```python
+class BasicQA(dspy.Signature):
+    """Answer questions with short factoid answers."""
+
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 5 words")
+```
+
+2、定义预测器（Predictor）：
+
+预测器是一个知道如何使用 LM 来实现签名的模块。重要的是，预测者可以学习使自己的行为适应任务，一个简单的示例如下所示：
+
+```python
+# Define the predictor.
+
+generate_answer = dspy.Predict(BasicQA)
+
+# Call the predictor on a particular input.
+
+pred = generate_answer(question=dev_example.question)
+
+# Print the input and the prediction.
+
+print(f"Question: {dev_example.question}")
+print(f"Predicted Answer: {pred.answer}")
+
+```
+
+在实际的业务流程预期的数据集的情况下，可以基于数据集优化预测器，从而迭代优化预测器的效果。
+
+#### Mongo Atlas Vector Search
+
+Mongo Atlas Vector Search 是 MongoDB 官方提供的向量化搜索能力，可以将向量化的数据直接存入 MongoDB 数据库表中的特定字段，之后为此字段创建向量搜索的索引。
+
+创建了向量搜索的索引之后，就可以执行向量化搜索，而 Mongo Atlas Vector Search 提供了 [Pre-Filter](https://www.mongodb.com/docs/atlas/atlas-vector-search/vector-search-stage/#atlas-vector-search-pre-filter) 的能力，这样就可以在向量化搜索前执行过滤，前面提到的查询完整病例库中执行妇产科病例的向量化检索的能力就可以轻松实现了。
+
+
+## 案例实践
+实践选择一个医学病例 + 医学指南的混合向量数据库进行实践，医学病例包含妇科和产科的病例，为了简化问题，实际选择两种场景：
+
+1. 病例检索，单独检索的特定科室的病例；
+2. 问题回答，需要结合病例与医学指南的知识去给出合适的答案；
+
+#### 数据库表设计
+根据前面的描述，简化后的数据库表如下所示：
+
+```python
+import enum
+from typing import Annotated, List, Optional
+
+from pydantic import BaseModel, BeforeValidator, Field
+
+PyObjectId = Annotated[str, BeforeValidator(str)]
+
+
+class ContentType(str, enum.Enum):
+    # 产科病例
+
+    Obstetric_cases = "Obstetric_cases"
+    # 妇科病例
+
+    Gynecological_cases = "Gynecological_cases"
+    # 医学指南
+
+    Medical_guide = "Medical_guide"
+
+
+# 数据对应的 MongoDB 数据库表定义
+
+
+class MedicalModel(BaseModel):
+    id: Optional[PyObjectId] = Field(alias="_id", default=None)
+    data_model_id: str
+    content_data: str
+    content_embedding: Optional[List[float]] = None
+    content_type: ContentType
+```
+
+实际使用 content_type 区分不同的数据类型，方便在对应的数据类型中进行向量化搜索。
+
+#### 数据写入
+基于 OpenAI 提供的 embedding 接口，可以执行内容的向量化，并写入数据库表，实现的数据写入的封装如下所示：
+
+```python
+from motor.motor_asyncio import AsyncIOMotorDatabase
+from openai import OpenAI
+from pymongo import UpdateOne
+from pymongo.results import BulkWriteResult
+
+# 使用 OpenAI 的接口生成向量数据
+
+def get_embedding(
+    text: str, embedding_model: str = "text-embedding-3-small"
+) -> List[float]:
+    response = OpenAI().embeddings.create(
+        model=embedding_model,
+        input=text,
+        encoding_format="float",
+    )
+    return response.data[0].embedding
+
+
+# 批量写入数据，内置向量生成
+
+async def batch_upsert_medical_models(
+    db: AsyncIOMotorDatabase,
+    medical_models: List[MedicalModel],
+) -> Optional[BulkWriteResult]:
+    operations = []
+    for medical_model in medical_models:
+        # 生成向量化数据，并写入 content_embedding 字段
+
+        medical_model.content_embedding = get_embedding(medical_model.content_data)
+        operations.append(
+            UpdateOne(
+                {"data_model_id": medical_model.data_model_id},
+                {
+                    "$set": {
+                        **medical_model.model_dump(exclude_unset=True),
+                    }
+                },
+                upsert=True,
+            )
+        )
+
+    if operations:
+        bulk_result = await db["medical_record"].bulk_write(operations)
+        return bulk_result
+    return None
+```
+
+在上面的封装中，实现 `batch_upsert_medical_models()` 方法用于生成向量化数据并写入 `content_embedding` 字段，最终调用 `UpdateOne()` 方法将数据写入 MongoDB 数据库中。
+
+#### 向量库查询
+进行向量化查询时，可以使用 Pymongo 提供的向量化搜索的能力，此时可以根据业务属性与其他的查询条件组合起来。在本次中我们主要结合 `content_type` 进行联合查询。实现的查询的封装如下所示：
+
+```python
+
+class MedicalModelQueryResponse(MedicalModel):
+    score: float
+
+
+# 查询向量知识库
+
+async def query_medical_models(
+    db: AsyncIOMotorDatabase,
+    query: str,
+    num_candidates: int = 20,
+    limit: int = 10,
+    content_types: Optional[List[ContentType]] = None,
+) -> List[MedicalModelQueryResponse]:
+    # 将查询问题向量化
+
+    query_embedding = get_embedding(query)
+
+    # 执行向量库查询，使用 content_embedding 字段进行向量库查询
+
+    vector_search_query = {
+        "index": "vector_index",
+        "path": "content_embedding",
+        "queryVector": query_embedding,
+        "numCandidates": num_candidates,
+        "limit": limit,
+    }
+
+    # 结合 content_type 进行联合查询
+
+    if content_types:
+        vector_search_query.update({"filter": {"content_type": {"$in": content_types}}})
+
+    cursor = db["medical_record"].aggregate(
+        [
+            {"$vectorSearch": vector_search_query},
+            {
+                "$project": {
+                    "_id": 1,
+                    "content_data": 1,
+                    "content_type": 1,
+                    "data_model_id": 1,
+                    "score": {"$meta": "vectorSearchScore"},
+                }
+            },
+        ]
+    )
+
+    return [MedicalModelQueryResponse(**r) async for r in cursor]
+
+```
+
+#### 向量化索引构造
+向量化查询需要构造单独的索引，需要在 MongoDB 提供的网页端创建对应的索引，根据上面的需求，生成的 `content_embedding` 的索引，并补充 `content_type` 的联合查询的索引，对应的配置如下所示：
+
+![index](/img/in-post/rag-arch/index.png)
+
+
+#### RAG 流程
+接下来就可以使用上面的知识库的数据构造实际的 RAG 服务，需要先定义 RAG 查询对应的输入输出，此时使用 dspy 提供的签名进行描述 (`Signature`)，对应如下所示：
+
+```python
+import dspy
+
+# 初始化指定 dspy 对应的大模型，使用的 OpenAI 提供的 GPT3.5
+
+dspy.settings.configure(lm=dspy.OpenAI(model="gpt-3.5-turbo-0125"))
+
+
+class GenerateAnswer(dspy.Signature):
+    """Answer questions with short factoid answers."""
+
+    context = dspy.InputField(desc="may contain relevant facts")
+    question = dspy.InputField()
+    answer = dspy.OutputField(desc="often between 1 and 100 words")
+
+```
+
+接下来封装实现 RAG 查询的方法，用于根据用户的查询问题调用 `query_medical_models()` 查询对应的数据，并使用 dspy 生成对应的响应，封装方法如下所示：
+
+```python
+async def rag_query(
+    db: AsyncIOMotorDatabase,
+    query: str,
+    content_types: Optional[List[ContentType]] = None,
+):
+    rag_chain = dspy.ChainOfThought(GenerateAnswer)
+
+    # 根据问题查询向量库获取相关的文档数据
+
+    contents = await query_medical_models(db, query=query, content_types=content_types)
+    content_datas = [content.content_data for content in contents]
+
+    # 调用 dspy 预测器生成对应的回答
+
+    predict = rag_chain(question=query, context=content_datas)
+    return predict
+
+```
+
+实际就可以调用上面的 `rag_query()` 方法进行预测，使用类似如下所示：
+
+```python
+db = get_database()
+# 寻找产科病例
+
+await rag_query(db, "寻找所有接受过剖宫产手术的病例", [ContentType.Obstetric_cases])
+# 寻找妇科病例
+
+await rag_query(db, "查找所有被诊断为子宫肌瘤的病例", [ContentType.Gynecological_cases])
+# 结合病例与指南给出综合的回答
+
+await rag_query(db, "为一位高血压患者制定一个包含生活方式改变和药物治疗的综合管理计划")
+```
+
+
+## 总结
+本文通过一个实际的案例来验证了一个新的 RAG 技术架构 Dspy + Mongo Atlas Vector Search，这个新的框架可以避免向量库查询与业务查询结合困难的问题，同时利用 Dspy 可以避免大量的查询需要构造复杂的 prompt 的问题。
+
+本文只是一个简单的实践，事实上为了发挥 Dspy 框架真正的效果，需要准备必要的训练数据，Dspy 框架会根据提供的数据调优对应的 prompt，从而实现 Few Shot 能力，最终的预测的效果会更好。这部分可以参考 [官方教程](https://github.com/stanfordnlp/dspy/blob/main/intro.ipynb) 学习。
+
+整体而言，这个框架适用于快速构建 RAG 服务，可以解决常规 RAG 框架存在的一些问题，但是也存在一些不便之处，比如 Mongo Atlas Vector Search 只能通过 Mongo 官方的云服务进行使用，希望文章给大家一些启发，在实践中根据需要进行技术选型，从而实现鲁棒性更强的 RAG 服务。
