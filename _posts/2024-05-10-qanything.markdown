@@ -13,21 +13,23 @@ tags:
 ---
 
 ## 背景介绍
-之前在做大模型知识库 RAG 优化时，主要参考的都是学术界的论文。最近了解到来自有道 QAnything 开源了，[在线试用](https://qanything.ai/) 之后，效果看起来还不错。
+之前在做大模型知识库 RAG 优化时，主要参考的都是学术界的论文。最近了解到有道 QAnything 开源了，[在线试用](https://qanything.ai/) 之后，效果看起来还不错，燃起了探索其实现细节的兴趣。
 
-正好对于 RAG 各个环节的最佳实践存在一些疑问，因此花费一点时间深入查看了有道 QAnything 的完整实现流程，学习下来自工业界大厂有道的实践方案。目前基于的是 2024-5 月当前最新的版本 [v1.4.0](https://github.com/netease-youdao/QAnything/releases/tag/v1.4.0-python)，这个项目也在持续迭代中，后续的版本可能会有差异。
+正好对于 RAG 各个环节的最佳实践存在一些疑问，因此深入查看了有道 QAnything 的完整实现流程，学习下来自工业界大厂有道的实践方案，在这边分享给大家。
+
+本文章基于的是 2024-5 月最新的版本 [v1.4.0](https://github.com/netease-youdao/QAnything/releases/tag/v1.4.0-python)，这个项目还在持续迭代中，后续的版本可能会存在差异。
 
 ## 项目概述
 
 #### 框架设计
 
-首先可以关注下 QAnything 的架构设计，可以与[常规的 RAG 架构](https://zhuanlan.zhihu.com/p/689947142)进行比较
+首先可以关注下 QAnything 的架构设计，与[常规的 RAG 架构](https://zhuanlan.zhihu.com/p/689947142)进行一些比较
 
 ![qanything_arch](/img/in-post/qanything/qanything_arch.png)
 
-与常规的 RAG 流程图相比，更加突出了 `Rerank` 环节，将 `Rerank` 作为 `2nd Retrieval` 进行强调，看起来这是有道对 RAG 的独特理解。
+与常规的 RAG 流程图相比，明显更加突出了 `Rerank` 环节，将 `Rerank` 作为 `2nd Retrieval` 进行强调，看起来这是有道对 RAG 的独到理解。
 
-另外 [QAnything 官方文档](https://github.com/netease-youdao/QAnything/tree/master?tab=readme-ov-file#rag-evaluations-in-llamaindexembedding-and-rerank) 中也强调，QAnything 使用的向量检索模型 `bce-embedding-base_v1` + 向量排序模型 `bce-reranker-base_v1` 组合是 SOTA。同样也印证了架构图， `Rerank` 是 QAnything 是相当重要的模块。
+另外 [QAnything 官方文档](https://github.com/netease-youdao/QAnything/tree/master?tab=readme-ov-file#rag-evaluations-in-llamaindexembedding-and-rerank) 中也强调，QAnything 使用的向量检索模型 `bce-embedding-base_v1` + 向量排序模型 `bce-reranker-base_v1` 组合才是 SOTA。同样也印证了架构图， `Rerank` 是 QAnything 是相当重要的模块。
 
 #### 项目源码
 
@@ -41,7 +43,7 @@ QAnything 的 web 服务的定义在 `qanything_kernel/qanything_server/sanic_ap
 
 
 ## 实现细节
-按照 RAG 文件和请求的处理主要包含下面的模块：
+常规的 RAG 主要包含如下所示的模块：
 
 1. 文件加载的支持；
 2. 文件的预处理策略；
@@ -49,10 +51,10 @@ QAnything 的 web 服务的定义在 `qanything_kernel/qanything_server/sanic_ap
 4. 检索结果的重排；
 5. 大模型的处理；
 
-下面就对这些环节的实现细节分别进行探索，看看其中有什么特殊设计。
+下面就对这些环节的实现细节分别进行探索，看看其中有什么独特的设计。
 
 #### 文件加载的支持
-文件的加载肯定是在用户上传时处理的，跟着接口 `/api/local_doc_qa/upload_files` 就可以看到对应的细节，简化后如下所示：
+文件的加载肯定是在用户上传时处理的，跟着接口 `/api/local_doc_qa/upload_files` 进去就可以看到对应的细节，简化后如下所示：
 
 ```python
 async def upload_files():
@@ -93,7 +95,7 @@ class UnstructuredPaddlePDFLoader(UnstructuredFileLoader):
                 for i in tqdm(range(doc.page_count)):
                     page = doc.load_page(i)
 
-                    # 获取 pdf 中的页，转换为图像，并通过 base64 编码
+                    # 获取 pdf 中的页，转换为图像
 
                     pix = page.get_pixmap()
                     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(
@@ -118,17 +120,15 @@ class UnstructuredPaddlePDFLoader(UnstructuredFileLoader):
 
 ```
 
+通过上面的实现可以看到，pdf 文件解析是基于 [PyMuPDF](https://github.com/pymupdf/PyMuPDF) 实现的，这是目前 pdf 解析中效率较高的方案。
 
+QAnything 使用 PyMuPDF 提供的 [get_pixmap](https://pymupdf.readthedocs.io/en/latest/annot.html#Annot.get_pixmap) 将原始的 pdf 转换为图像，并调用 OCR 服务提取内容，简单粗暴。
 
-pdf 文件解析是基于 [PyMuPDF](https://github.com/pymupdf/PyMuPDF) 实现的，目前这是开源 pdf 解析中效率相对高的解析库。
-
-直接使用 PyMuPDF 提供的 [get_pixmap](https://pymupdf.readthedocs.io/en/latest/annot.html#Annot.get_pixmap) 将原始的 pdf 转换为图像，并调用 OCR 服务提取内容，简单粗暴。
-
-优势是处理简单，不需要区分文字文档，还是图像文档，处理统一。缺点是效率会稍微低一点。我实际测试 PyMuPDF 去解析文字文档时调用 [get_text](https://pymupdf.readthedocs.io/en/latest/annot.html#Annot.get_text) 速度会快很多。
+优势是处理简单，不需要区分文字文档，还是图像文档，处理统一。缺点是效率会稍微低一点。从我实际测试的情况来看，解析文字文档时调用 PyMuPDF 提供的 [get_text](https://pymupdf.readthedocs.io/en/latest/annot.html#Annot.get_text) 速度会比 OCR 快很多。
 
 #### 文件的预处理策略
 
-文件的预处理切片目前主要是通过自行实现的 `ChineseTextSplitter` 来完成的。从实现来看，会执行多余字符的清理，并按照符号进行切分，有不少的特殊处理逻辑，应该是对实践中发现的 bad case 进行了特殊处理。对应的实现如下所示：
+文件的预处理切片目前主要是通过自行实现的 `ChineseTextSplitter` 来完成的。在此步骤中会执行多余字符的清理，并按照符号进行切分，有不少的特殊处理逻辑，应该是对实践中发现的 bad case 进行了较多的特殊处理。对应的实现如下所示：
 
 ```python
 def split_text(self, text: str) -> List[str]:
@@ -178,7 +178,7 @@ def split_text(self, text: str) -> List[str]:
 
 检索是 RAG 问答一部分，只需要关注问答接口 `/api/local_doc_qa/local_doc_chat` 的实现 `local_doc_chat()` 即可。
 
-通过跟进调用链路，确认向量库检索的实现都是在 `qanything_kernel/core/local_doc_qa.py` 中的 `get_source_documents()` 中完成的，具体的为实现如下：
+跟进调用链路，确认向量库检索的实现是在 `qanything_kernel/core/local_doc_qa.py` 中的 `get_source_documents()` 中完成的，具体实现如下：
 
 ```python
 def get_source_documents(self, queries, milvus_kb, cosine_thresh=None, top_k=None):
@@ -207,7 +207,9 @@ def get_source_documents(self, queries, milvus_kb, cosine_thresh=None, top_k=Non
     return source_documents
 ```
 
-最终的检索是在 `MilvusClient` 中的 `__search_emb_sync()` 方法完成，目前支持了常规的向量检索，同时支持 `BM25` + 向量检索的混合检索，具体的实现如下所示：
+可以看到实际的检索是调用 `MilvusClient` 类的 `search_emb_async()` 方法完成的。深入进去发现，核心的检索是在 `MilvusClient` 中的 `__search_emb_sync()` 方法完成。
+
+目前支持了常规的向量检索与混合检索（`BM25` + 向量检索），具体的实现如下所示：
 
 ```python
 def __search_emb_sync(self, embs, expr='', top_k=None, client_timeout=None, queries=None):
@@ -217,8 +219,8 @@ def __search_emb_sync(self, embs, expr='', top_k=None, client_timeout=None, quer
     # 调用 milvus 进行向量检索
 
     milvus_records = self.sess.search(data=embs, partition_names=self.kb_ids, anns_field="embedding",
-                                        param=self.search_params, limit=top_k,
-                                        output_fields=self.output_fields, expr=expr, timeout=client_timeout)
+                                      param=self.search_params, limit=top_k,
+                                      output_fields=self.output_fields, expr=expr, timeout=client_timeout)
     milvus_records_proc = self.parse_batch_result(milvus_records)
 
     # 混合检索, 调用 ES 客户端执行 BM25 检索，并将检索的结果与向量检索的结果拼接在一起
@@ -231,7 +233,7 @@ def __search_emb_sync(self, embs, expr='', top_k=None, client_timeout=None, quer
     return milvus_records_proc
 ```
 
-**值得注意的是，默认流程是没有使用相似度阈值进行过滤的，而且返回的数量 top_k 默认为 100，配置上混合检索后获得的内容就会更多，可以理解为向量化检索尽可能多地匹配了可能相关的文档。**
+**值得注意的是，默认流程是没有使用相似度阈值进行过滤的，而且返回的数量 top_k 默认为 100，配置上混合检索后获得的文档数量会更多，可以理解为向量化检索尽可能多地匹配了可能相关的文档。**
 
 #### 检索结果的重排
 
@@ -260,7 +262,7 @@ def rerank_documents_for_local(self, query, source_documents):
 
 **注意 QAnything 是根据 Rerank 的得分进行过滤的，与常规 RAG 根据相似度过滤存在一些差异。另外考虑到 QAnything 默认检索 100 个文档，使用 Rerank 得分 0.35 进行过滤后数量也可能会超过大模型的请求 token 数量。**
 
-而重排服务是在 `qanything_kernel/dependent_server/rerank_for_local_serve/rerank_server.py` 定义的，并在 `LocalRerankBackend.predict()` 分批执行文档的重排，实现如下所示：
+重排服务是在 `qanything_kernel/dependent_server/rerank_for_local_serve/rerank_server.py` 定义的，并在 `LocalRerankBackend.predict()` 实际完成对重排请求的处理，实现如下所示：
 
 ```python
 def predict(self,
@@ -268,6 +270,7 @@ def predict(self,
             passages: List[str],
             ):
     # 原始 query 和文档内容 tokenize 转换
+
     tot_batches, merge_inputs_idxs_sort = self.tokenize_preproc(query, passages)
 
     tot_scores = []
@@ -290,7 +293,7 @@ def predict(self,
     return merge_tot_scores
 ```
 
-在此方法中会将原始的文本内容 tokenizer 转换为对应的标记，接下来调用 `triton` 部署的 Rerank 模型对每个文档进行评分
+在此方法中会将原始的文本内容 tokenizer 转换为对应的标记，接下来调用 `triton` 部署的 Rerank 模型对每个文档进行评分，作为最终过滤和调整顺序的依据。
 
 #### 大模型的处理
 
@@ -298,7 +301,7 @@ def predict(self,
 
 1. 原始问题；
 2. 检索获得的文档 context；
-3. 历史上下文聊天记录；
+3. 历史聊天记录；
 4. 将所有数据组织在一起的 prompt；
 
 前面在获取相关文档时相对宽松，重排时进行了过滤掉了得分低于 0.35 的文档，但是并没有限制匹配的数量，因此依旧会出现匹配的文档的数量超过大模型单次请求的最大 token 数量。
@@ -372,8 +375,8 @@ def reprocess_source_documents(self, query: str,
 其中 context 对应的就是检索的文档的内容。
 
 ## 结论
-通过上面的完整流程的介绍，基本看到了一个来自工业界的 RAG 服务 QAnything 的全貌，和最初的猜测一致，有道 QAnything 主要是在 Rerank 阶段做了不少的优化，强调了 Rerank 对于 RAG 的重要性。
+通过上面的完整流程的介绍，基本看到了一个来自工业界的 RAG 服务 QAnything 的全貌，和最初的猜测一致，有道 QAnything 主要是在 Rerank 阶段做了不少的优化，十分强调 Rerank 对于 RAG 的重要性。
 
-在 Embedding Query 阶段，QAnything 没有应用目前学术界经常提到的 [Rewrite](https://arxiv.org/pdf/2305.14283)， [Query2Doc](https://arxiv.org/pdf/2303.07678) 和 [Self-RAG](https://arxiv.org/pdf/2310.11511) 机制。
+在 Embedding Query 阶段，QAnything 没有应用目前学术界经常提到的 [Rewrite](https://arxiv.org/pdf/2305.14283)， [Query2Doc](https://arxiv.org/pdf/2303.07678) 和 [Self-RAG](https://arxiv.org/pdf/2310.11511) 等优化机制。
 
-实践是检验真理的唯一手段，是否有效还得试了才知道，大家可以借鉴各个方案的优秀之处，最终自己的服务才会越来越智能。
+实践是检验真理的唯一手段，是否有效还得试了才知道，大家尽可以借鉴各个方案的优秀之处，最终才能不断提升服务的效果。
