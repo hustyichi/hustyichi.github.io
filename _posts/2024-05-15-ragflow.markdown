@@ -24,15 +24,14 @@ tags:
 
 ![ragflow-arch](/img/in-post/ragflow/ragflow-arch.png)
 
-可以看到右侧知识库被明显放大，另外最右侧详细介绍了文件解析的各种手段，比如 `OCR`， `Document Layout Analyze` 等，这些在常规的 RAG 中会作为一个不起眼的 `Unstructured Loader` 包含进去，可以猜到 RagFlow 的一个核心能力可能在于文件的解析环节。
+可以看到右侧知识库被明显放大，同时最右侧详细介绍了文件解析的各种手段，比如 `OCR`， `Document Layout Analyze` 等，这些在常规的 RAG 中可能会作为一个不起眼的 `Unstructured Loader` 包含进去，可以猜到 RagFlow 的一个核心能力在于文件的解析环节。
 
 在 [官方文档](https://github.com/infiniflow/ragflow?tab=readme-ov-file#-key-features) 中也反复强调 `Quality in, quality out`, 反映出 RAGFlow 的独到之处在于细粒度文档解析。
 
-另外 [介绍文章](https://www.aigcopen.com/content/corporate_news/23689.html) 中提到其`没有使用任何 RAG 中间件，而是完全重新研发了一套智能文档理解系统，并以此为依托构建 RAG 任务编排体系`，也可以理解文档的解析是其核心。
+另外 [介绍文章](https://www.aigcopen.com/content/corporate_news/23689.html) 中提到其`没有使用任何 RAG 中间件，而是完全重新研发了一套智能文档理解系统，并以此为依托构建 RAG 任务编排体系`，也可以理解文档的解析是其 RagFlow 的核心亮点。
 
 #### 源码结构
-
-首先可以看到 RagFlow 的源码结构
+首先可以看到 RagFlow 的源码结构：
 
 ![structure](/img/in-post/ragflow/structure.png)
 
