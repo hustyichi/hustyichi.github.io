@@ -1,6 +1,6 @@
 ---
 layout: post
-title: "以《红楼梦》的视角看大模型知识库 RAG 服务的 Rerank 调优"
+title: "从《红楼梦》的视角看大模型知识库 RAG 服务的 Rerank 调优"
 subtitle:   "Rerank tuning of RAG service in large model knowledge base from the perspective of 'Dream of Red Mansions'"
 date:       2024-05-22 21:00:00
 author:     "Bryan"
@@ -14,7 +14,9 @@ tags:
 ## 背景介绍
 在之前的文章 [有道 QAnything 源码解读](https://zhuanlan.zhihu.com/p/697031773) 中介绍了有道 RAG 的一个主要亮点在于对 Rerank 机制的重视。
 
-从目前来看，Rerank 确实慢慢演化为 RAG 的一个重要模块，在这篇文章中就希望能讲清楚为什么 RAG 服务需要 Rerank 机制，以及如何选择最合适的 Rerank 模型。最终以完整的《红楼梦》知识库为例进行实践，看看 Rerank 带来的效果差异。
+从目前来看，Rerank 确实逐渐成为 RAG 的一个重要模块，在这篇文章中就希望能讲清楚为什么 RAG 服务需要 Rerank 机制，以及如何选择最合适的 Rerank 模型。最终以完整的《红楼梦》知识库进行实践。
+
+如果你问为什么要用红楼梦，答案就是作为读了很多遍《红楼梦》的忠实粉丝，问题的答案是不是靠谱一眼就能判断，问题相关的片段也能快速定位，就像定位 bug 一样快。
 
 ## Rerank 是什么
 以有道 QAnything 的架构来看 Rerank 在 RAG 服务中所处的环节
