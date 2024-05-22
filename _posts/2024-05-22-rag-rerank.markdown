@@ -1,7 +1,7 @@
 ---
 layout: post
 title: "以《红楼梦》的视角看大模型知识库 RAG 服务的 Rerank 调优"
-subtitle:   "Rerank tuning of RAG service in large model knowledge base from the perspective of "Dream of Red Mansions""
+subtitle:   "Rerank tuning of RAG service in large model knowledge base from the perspective of "Dream of Red Mansions"
 date:       2024-05-22 21:00:00
 author:     "Bryan"
 header-mask: 0.3
