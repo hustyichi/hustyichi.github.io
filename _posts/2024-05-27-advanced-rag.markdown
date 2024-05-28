@@ -85,15 +85,84 @@ web_search = PromptTemplate(template=web_search_template, input_variables=["QUES
 #### Rewrite-Retrieve-Read
 
 Rewrite-Retrieve-Read 的想法来自于 [Query Rewriting for Retrieval-Augmented Large Language Models
-](https://arxiv.org/pdf/2305.14283)
+](https://arxiv.org/pdf/2305.14283)，对应的流程如下所示：
 
+![rewrite](/img/in-post/advanced-rag/rewrite.png)
 
-#### Step-Back Prompting
+此方法的主要思想是用户的原始问题检索效果不佳，通过大模型进行重写提升问题对应的检索能力。这个有实际上线 RAG 服务的应该有类似的遭遇，用户的问题都是千奇百怪的，确实存在原始问题检索效果不佳的情况。
 
+**实现方案**
+
+Rewrite-Retrieve-Read 的实现方案相对明确，使用大模型直接重写问题即可，对应的实现可以参考 [langchain template](https://github.com/langchain-ai/langchain/blob/master/templates/rewrite-retrieve-read/rewrite_retrieve_read/chain.py)
+
+核心的功能如下所示：
+
+```python
+template = """Provide a better search query for \
+web search engine to answer the given question, end \
+the queries with ’**’. Question: \
+{x} Answer:"""
+rewrite_prompt = ChatPromptTemplate.from_template(template)
+
+def _parse(text):
+    return text.strip("**")
+
+rewriter = rewrite_prompt | ChatOpenAI(temperature=0) | StrOutputParser() | _parse
+```
+
+可以看到 langchain 中设计了一个特殊的 prompt 进行了原始问题的转换，思路相对简单。
+
+**实践效果**
+
+最终实际测试下来，效果不是特别问题，部分问题转换后的效果更好，部分效果更差，从目前的理解来看，与大模型本身的能力存在较大关系。
 
 #### Query2Doc
 
+Query2Doc 的想法来自于 [Query2doc: Query Expansion with Large Language Models](https://arxiv.org/pdf/2303.07678)，是在 HyDE 的想法上进行了一些提升。
 
-#### MultiQuery Retriever
+原始的 HyDE 是使用大模型生成的答案（Hypothetical Document）进行检索，而 Query2Doc 则会将生成的答案与原始问题进行拼接，之后使用拼接得到的内容进行检索。
 
+针对不同的检索方案拼接方案有所差异，其中稀疏检索的中的拼接方案如下所示：
+
+![sparse](/img/in-post/advanced-rag/sparse.png)
+
+其中的 `q` 为原始问题，`d` 为生成的回答，可以看到 `q` 会被重复 `n` 次，并与 `d` 拼接起来。
+
+而密集检索的拼接方案如下所示：
+
+![dense](/img/in-post/advanced-rag/dense.png)
+
+可以看到是直接将原始问题 `q` 与大模型生成的回答 `d` 进行了拼接，中间使用分隔符 `[SEP]` 进行了分隔。
+
+**实现方案**
+
+可以参考 HyDE 进行简单调整即可实现 Query2Doc，简单的示例如下所示：
+
+```python
+def embed_query(self, text: str) -> List[float]:
+    """Generate a hypothetical document and embedded it."""
+    # 通过大模型生成文本对应的响应
+
+    var_name = self.llm_chain.input_keys[0]
+    result = self.llm_chain.generate([{var_name: text}])
+    documents = [generation.text for generation in result.generations[0]]
+    # 拼接原始查询与生成的响应，使用空格作为分隔符 SEP
+
+    documents = [f"{text} {doc}" for doc in documents]
+    # 文档向量化
+
+    embeddings = self.embed_documents(documents)
+    return self.combine_embeddings(embeddings)
+```
+
+**实践效果**
+
+实际测试下来，相对原始的 HyDE 方案效果更好，但是实际效果改善不明显。
+
+
+## 总结
+
+本次测试了目前比较常规的几种 Pre-Retrieval 优化手段，从目前来看，优化思想都相对容易理解，利用大模型提供的能力优化了原始 query 检索效果不佳的问题。
+
+但是实际测试下来，改善效果相对有限，不如之前测试过的 [Rerank](https://zhuanlan.zhihu.com/p/699339963) 机制那么立竿见影。后续会进一步调研其他可能的优化方案，欢迎关注。
 
