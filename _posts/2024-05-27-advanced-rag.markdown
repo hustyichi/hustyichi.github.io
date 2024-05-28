@@ -14,18 +14,20 @@ tags:
 
 ## 背景介绍
 
-在之前的文章整理过来自工业界的 RAG 方案 [QAnything](https://zhuanlan.zhihu.com/p/697031773) 和 [RagFlow](https://zhuanlan.zhihu.com/p/697902937) 的源码解析，这次主要整理下来自学术界的一系列 RAG 优化方案，通过从梳理方案的原理与对应的实现，帮助大家优化知识库 RAG 的效果。
+在之前的文章详细梳理过工业界的 RAG 方案 [QAnything](https://zhuanlan.zhihu.com/p/697031773) 和 [RagFlow](https://zhuanlan.zhihu.com/p/697902937)，这次主要整理下来自学术界的一系列 RAG 优化方案。
+
+主要关注优化方案对应的设计思想以及相关的实现，希望可以对大家的 RAG 服务效果提升有所帮助。
 
 ## 基础介绍
-在综述论文 [Retrieval-Augmented Generation for Large Language Models: A Survey](https://arxiv.org/pdf/2312.10997) 介绍了三种不同的 RAG 方案：
+在综述论文 [Retrieval-Augmented Generation for Large Language Models: A Survey](https://arxiv.org/pdf/2312.10997) 介绍了三种不同的 RAG 架构：
 
 ![rag_types](/img/in-post/advanced-rag/rag_types.png)
 
-1. Native RAG: 原始 RAG，对应最原始的 RAG 流程，和之前 [搭建离线私有大模型知识库](https://zhuanlan.zhihu.com/p/689947142) 介绍的流程基本一致；
-2. Advanced RAG：高级 RAG，在原始 RAG 上增加了一些优化手段，之前实践过的 [RAG Rerank](https://zhuanlan.zhihu.com/p/699339963) 优化手段就属于高级 RAG 中的 Post-Retrieval (检索后的优化)；
-3. Modular RAG：模块化 RAG，通过模块化的架构设计，可以提供灵活的功能组合，方便实现功能强大的 RAG 服务。
+1. Native RAG: 原始 RAG 架构，对应最原始的 RAG 流程，和之前 [搭建离线私有大模型知识库](https://zhuanlan.zhihu.com/p/689947142) 介绍的流程基本一致；
+2. Advanced RAG：高级 RAG 架构，在原始 RAG 上增加了一些优化手段，之前实践过的 [RAG Rerank](https://zhuanlan.zhihu.com/p/699339963) 优化手段就属于高级 RAG 中的 Post-Retrieval (检索后的优化)；
+3. Modular RAG：模块化 RAG 架构，通过模块化的架构设计，可以提供灵活的功能组合，方便实现功能强大的 RAG 服务。
 
-本篇文章主要实践的还是高级 RAG，采取的优化手段主要是之前较少涉及的 Pre-Retrieval（检索前的优化），目前有大量相关论文的研究，目前主要选择其中最有代表性的方案进行实践，主要的实现都是基于 langchain 来完成。
+本篇文章主要实践的还是高级 RAG 架构中的优化手段，涉及的时是之前较少涉及的 Pre-Retrieval（检索前的优化），目前有大量相关论文的研究，目前主要选择其中几种有代表性的方案进行实践，所有的实现都是基于 langchain 完成的。
 
 ## 优化方案
 
@@ -36,14 +38,14 @@ HyDE 的优化手段来自于论文 [Precise Zero-Shot Dense Retrieval without R
 
 用户原始的问题与需要检索文档的向量相似度上不接近，因此向量检索效果不佳。因此 HyDE 的设计思想如下：
 
-1. 根据原始问题使用大模型生成假设文档，可以理解为使用大模型先给出的答案，此答案没有额外知识，可能存在幻觉；
+1. 根据原始问题使用大模型生成假设文档，可以理解为使用大模型先给出答案，此答案中可能存在幻觉；
 2. 基于生成的假设文档进行向量检索；
 
-为什么假设文档检索的效果会好于通过问题检索呢？我直观理解下来就是与答案语义上接近的更有可能是所需的答案，而且大模型是通过大量原始文档学习出来，因此生成的文档与原始文档上更接近，易于检索。
+为什么假设文档检索的效果会好于通过问题检索呢？我直观理解下来就是与大模型的答案语义上接近的更有可能是所需的答案，而且大模型是通过大量原始文档学习出来，因此生成的假设文档与原始文档上更接近，因此更易于检索。
 
 **实现方案**
 
-HyDE 的实现在 langchain 已经支持了，可以通过 `from langchain.chains import hyde` 进行使用，提供是一个向量化查询的转换支持，可以看到其中最核心的方法如下所示：
+HyDE 的实现在 langchain 已经支持了，可以通过 `from langchain.chains import hyde` 进行使用，提供的是一个向量化查询的转换支持，可以看到其中最核心的方法如下所示：
 
 ```python
 def embed_query(self, text: str) -> List[float]:
@@ -59,11 +61,11 @@ def embed_query(self, text: str) -> List[float]:
     return self.combine_embeddings(embeddings)
 ```
 
-熟悉 langchain 的研发同学应该都了解这个方法的用途，主要是用于将原始文本向量化。常规情况下需要调用下面 `self.embed_documents()` 将原始查询 `text` 向量化。
+熟悉 langchain 的研发同学应该都了解这个方法的用途，主要是用于将原始文本向量化，方便进行后续的向量检索。
 
-HyDE 中会增加一个大模型生成回答的流程 `self.llm_chain.generate([{var_name: text}])`，与前面的描述的基本一致。
+常规的文本向量化是直接调用下面的 `self.embed_documents()` 将原始查询 `text` 向量化。但是在 HyDE 中会增加一个大模型生成回答的流程 `self.llm_chain.generate([{var_name: text}])`，接下来将大模型的回答向量化，并使用此向量进行检索。
 
-接下来可以看看 HyDE 中使用 prompt，这部分可以在 `from langchain.chains.hyde import prompts` 中看到，看起来是根据不同场景设计了不同的 prompt，我们以 web_search 为例查看，对应如下所示：
+接下来可以看看 HyDE 中使用 prompt，这部分可以在 `from langchain.chains.hyde import prompts` 中看到，看起来是根据不同场景设计了不同的 prompt。我们以 web_search 为例，对应的应该是文本搜索的场景，prompt 如下所示：
 
 ```python
 from langchain_core.prompts.prompt import PromptTemplate
@@ -78,9 +80,9 @@ web_search = PromptTemplate(template=web_search_template, input_variables=["QUES
 
 **实践效果**
 
-理想很丰满，实践下来发现 HyDE 实际效果不佳，实际测试中大模型给出的响应与原始文档表达形式并不接近，导致最终测试时原始 query 还可以检索到部分相关文档，使用大模型给出的回答完全检索不到任何内容。
+理想很丰满，实践下来发现 HyDE 实际效果不佳，实际测试中大模型给出的响应与原始知识库中的文档表达形式并不接近，导致最终测试时原始 query 可以检索到部分相关文档，使用大模型给出的回答进行检索则完全检索不到任何内容。
 
-目前来看，HyDE 在大模型可以给出与文档类似的表达形式的内容时可能会有一些效果，因此对大模型的选型和使用场景上都有一些要求。
+目前来看，HyDE 在大模型可以给出与文档类似的表达形式的内容时可能会有一些效果。预期对大模型的选型和使用场景上都有明显要求，使用不当可能会导致效果更差。
 
 #### Rewrite-Retrieve-Read
 
@@ -89,11 +91,13 @@ Rewrite-Retrieve-Read 的想法来自于 [Query Rewriting for Retrieval-Augmente
 
 ![rewrite](/img/in-post/advanced-rag/rewrite.png)
 
-此方法的主要思想是用户的原始问题检索效果不佳，通过大模型进行重写提升问题对应的检索能力。这个有实际上线 RAG 服务的应该有类似的遭遇，用户的问题都是千奇百怪的，确实存在原始问题检索效果不佳的情况。
+此方法的主要思想是用户的原始问题检索效果不佳，通过大模型进行重写提升问题对应的检索能力。
+
+有实际上线 RAG 服务的应该有类似的遭遇，用户的问题都是千奇百怪的，确实存在原始问题检索效果不佳的情况，Rewrite-Retrieve-Read 就是基于大模型提供的能力进行了重写。
 
 **实现方案**
 
-Rewrite-Retrieve-Read 的实现方案相对明确，使用大模型直接重写问题即可，对应的实现可以参考 [langchain template](https://github.com/langchain-ai/langchain/blob/master/templates/rewrite-retrieve-read/rewrite_retrieve_read/chain.py)
+Rewrite-Retrieve-Read 的实现方案相对简单，使用大模型直接重写问题，对应的实现可以参考 [langchain template](https://github.com/langchain-ai/langchain/blob/master/templates/rewrite-retrieve-read/rewrite_retrieve_read/chain.py)
 
 核心的功能如下所示：
 
@@ -114,7 +118,7 @@ rewriter = rewrite_prompt | ChatOpenAI(temperature=0) | StrOutputParser() | _par
 
 **实践效果**
 
-最终实际测试下来，效果不是特别问题，部分问题转换后的效果更好，部分效果更差，从目前的理解来看，与大模型本身的能力存在较大关系。
+最终实际测试下来，效果不是特别问题，部分问题转换后的效果更好，部分效果更差，从目前来看，与大模型本身的能力存在较大关系。
 
 #### Query2Doc
 
@@ -162,7 +166,7 @@ def embed_query(self, text: str) -> List[float]:
 
 ## 总结
 
-本次测试了目前比较常规的几种 Pre-Retrieval 优化手段，从目前来看，优化思想都相对容易理解，利用大模型提供的能力优化了原始 query 检索效果不佳的问题。
+本次测试了目前比较常规的几种 Pre-Retrieval 优化手段，从目前来看，优化思想都相对容易理解，都是在尝试利用大模型提供的能力优化了原始 query 难以检索的问题。
 
 但是实际测试下来，改善效果相对有限，不如之前测试过的 [Rerank](https://zhuanlan.zhihu.com/p/699339963) 机制那么立竿见影。后续会进一步调研其他可能的优化方案，欢迎关注。
 
