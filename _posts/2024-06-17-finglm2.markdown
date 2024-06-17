@@ -53,6 +53,7 @@ def _get_classify_prompt(self, question) -> str:
     return classify_prompt
 
 # 加载Classify训练权重后，来强化问题的分类能力，返回问题的类型字母编号
+
 def classify(self, question: str):
     classify_prompt = self._get_classify_prompt(question)
     response, _ = self.model.chat(
