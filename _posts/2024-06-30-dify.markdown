@@ -1,0 +1,127 @@
+---
+layout: post
+title: "Github 上 Star 数最多的大模型应用基础服务 Dify 深度解读（一）"
+subtitle:   "Dify source code analysis of the large model application basic service with the largest number of stars on Github (1)"
+date:       2024-06-30 16:30:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - dify
+    - rag
+---
+
+## 背景介绍
+进行过大模型应用开发的研发同学应该都或多或少地接触过 Dify 这个大模型应用基础服务，这个服务自从 2023 年上线以来，截止目前（2024-6）已经获得了 35k 多的 star，这无疑是一个非常有价值的开源项目。
+
+Dify 是一个 [LLMOps](https://docs.dify.ai/v/zh-hans/learn-more/extended-reading/what-is-llmops) 服务, 涵盖了大型语言模型（如GPT系列）开发、部署、维护和优化的一整套实践和流程。可以大幅简化大模型应用的开发。
+
+基于 Dify 可以在不需要太多开发的情况下，快速搭建一个大模型应用。可以基于 Dify 自身具备的大量基础能力，比如知识库检索 RAG，大模型调用，并具备灵活组合这些基础能力实现一个完备的基础大模型应用。一个典型的场景如下所示：
+
+![workflow](/img/in-post/dify/workflow.png)
+
+上面的场景中就组合出分类场景，RAG 服务以及大模型调用，最后组合出一个大模型应用。
+
+Dify 框架中涉及的内容比较多，在这篇文章中主要涉及其中知识库 RAG 服务的设计，后续会陆续更新其他内容。
+
+## RAG 核心流程
+
+RAG 服务的基础流程在之前的 [从开发到部署，搭建离线私有大模型知识库](https://zhuanlan.zhihu.com/p/689947142) 文章中已经介绍过了，RAG 服务的开源框架 [有道 QAnything](https://zhuanlan.zhihu.com/p/697031773) 和 [Ragflow](https://zhuanlan.zhihu.com/p/697902937) 也都解读过基础的 RAG 流程了，基础 RAG 流程就不详细展开了，RAG 服务一般会包含如下所示的核心模块：
+
+- 文件加载的支持；
+- 文件的预处理策略；
+- 文件检索的支持 (包含混合检索)；
+- 检索结果的重排；
+- 大模型的处理；
+
+因为 RAG 服务只是 Dify 中的一个基础模块，官方没有过多强调 RAG 服务的独特设计，但是依旧可以看到一个差异点：
+
+1. 支持 Q&A 模式，与上述普通的「Q to P」（问题匹配文本段落）匹配模式不同，它是采用「Q to Q」（问题匹配问题）匹配工作；
+2. 丰富的召回模式，支持下面的召回模式：
+
+    -  `N 选 1 召回`（根据用户意图和知识库描述，由 LLM 自主判断选择最匹配的单个知识库来查询相关文本）
+    -  `多路召回`（根据用户意图同时匹配所有知识库，从多路知识库查询相关文本片段，经过重排序步骤，从多路查询结果中选择匹配用户问题的最佳结果）
+
+## 核心模块解读
+
+之前介绍过来自中科院的 RAG 服务 [GoMate](https://zhuanlan.zhihu.com/p/705218535) 采取的是模块化设计，方便进行上层应用的组合。从目前的实现来看，Dify 的 RAG 设计也是模块化设计的，RAG 的代码实现都在 `api/core/rag` 中，从结构上也很容易理解各个模块的作用：
+
+![codes](/img/in-post/dify/codes.png)
+
+深入来看代码的实现质量也比较高，对 RAG 的模块化设计感兴趣的可以深入了解下实现细节。
+
+#### 文件加载
+
+实际的文件加载都是在 `api/core/rag/extractor/extract_processor.py` 中实现的，主要的文件解析是基于 [unstructured](https://github.com/Unstructured-IO/unstructured) 实现，另外基于其他第三方库实现了部分特定格式文件的处理
+
+比如对于 pdf 文件，是基于 [pypdfium2](https://github.com/pypdfium2-team/pypdfium2) 进行解析的，html 是基于 BeautifulSoup 进行解析，这部分代码实现都比较简单，就不展开介绍了。
+
+#### 文件预处理
+
+加载的模型中的内容可能会存在一些问题，比如多余的无用字符，编码错误或其他的一些问题，因此需要对文件解析的内容进行必要的清理，这部分代码实现在 `api/core/rag/cleaner` 中。
+
+实际的解析都是基于 [unstructured cleaning](https://docs.unstructured.io/open-source/core-functionality/cleaning) 实现的，主要就是将不同的清理策略封装为包含同样接口的模块，方便应用层自由选择。这部分实现也比较简单，给大家看一个简单的示例：
+
+```python
+class UnstructuredNonAsciiCharsCleaner(BaseCleaner):
+    def clean(self, content) -> str:
+        from unstructured.cleaners.core import clean_extra_whitespace
+        return clean_extra_whitespace(content)
+```
+
+这个策略就可以清理解析中多余的空格。、
+
+#### 文件检索
+
+知识库的检索是在 `api/core/workflow/nodes/knowledge_retrieval/knowledge_retrieval_node.py` 中实现的，与常规的 RAG 存在明显不同之处。
+
+**多种召回模式**
+
+多种召回模式用户可以自由选择：
+
+![retrieve](/img/in-post/dify/retrieve.webp)
+
+- `N 选 1 召回`：此时会先根据用户输入的意图选择合适的知识库，然后从知识库检索所需的文档，适用于知识库彼此隔离，不需要互相联合查询的场景；
+- `多路召回`：此时会同时从多个知识库检索，然后进行重新排序，适用于知识库需要联合查询的场景。
+
+常规的 RAG 服务需要先手工选择知识库，然后从对应的知识库进行检索，无法支持跨库检索。相对而言，Dify 的这个设计还是要更方便一些。下面以 `N 选 1 召回` 介绍下文件的检索，对应的流程如下所示：
+
+![router](/img/in-post/dify/router.png)
+
+`N 选 1 召回` 的知识库选择是基于用户问题与知识库描述的语义匹配性来进行选择，存在 Function Call/ReAct 两种模式，实现代码是在 `api/core/rag/retrieval/dataset_retrieval.py` 中，具体如下所示：
+
+```python
+tools = []
+for dataset in available_datasets:
+    description = dataset.description
+    if not description:
+        description = 'useful for when you want to answer queries about the ' + dataset.name
+
+    description = description.replace('\n', '').replace('\r', '')
+    message_tool = PromptMessageTool(
+        name=dataset.id,
+        description=description,
+        parameters={
+            "type": "object",
+            "properties": {},
+            "required": [],
+        }
+    )
+    tools.append(message_tool)
+dataset_id = None
+if planning_strategy == PlanningStrategy.REACT_ROUTER:
+    react_multi_dataset_router = ReactMultiDatasetRouter()
+    dataset_id = react_multi_dataset_router.invoke(query, tools, model_config, model_instance,
+                                                    user_id, tenant_id)
+
+elif planning_strategy == PlanningStrategy.ROUTER:
+    function_call_router = FunctionCallMultiDatasetRouter()
+    dataset_id = function_call_router.invoke(query, tools, model_config, model_instance)
+
+```
+
+
+
+
+#### 检索结果重排
