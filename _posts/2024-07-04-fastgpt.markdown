@@ -1,0 +1,51 @@
+---
+layout: post
+title: "一款纯 js 实现的大模型应用服务 FastGPT 解读"
+subtitle:   "Interpretation of FastGPT, a large model application service implemented in pure js"
+date:       2024-07-04 09:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - FastGPT
+    - rag
+---
+
+## 背景介绍
+最近被不同的人安利了 [FastGPT](https://github.com/labring/FastGPT) 项目，实际上手体验了一下，实际的流程类似之前有调研过的 [Dify](https://zhuanlan.zhihu.com/p/706381113), 包含的功能主要是：任务流的编排，知识库管理，另外还有一些外部工具的调用能力。实际使用的页面如下所示：
+
+![usage](/img/in-post/fastgpt/usage.png)
+
+实际去看了下项目的代码分布，结果发现如下所示：
+
+![language](/img/in-post/fastgpt/language.png)
+
+难道后端 Python 只需要如此少的代码量就可以实现一个大模型应用了？接下来深入了解了 FastGPT 的实现，发现其 Python 为测试代码，完整的项目实现都是基于前端语言 ts 和 js 实现。这篇文章就主要介绍下 FastGPT 知识库 RAG 设计的实现细节。
+
+## FastGPT 简介
+
+FastGPT 被认为是一个基于 LLM 大语言模型的知识库问答系统，与常规的 RAG 相比增加了额外工作流编排的能力，这部分类似 Dify。但是相对 Dify 而言，除了知识库之外的其他可调用的应用更少一些。按照习惯先查看项目的架构图：
+
+![arch](/img/in-post/fastgpt/functional-arch.webp)
+
+一般而言，从架构图中就可以看到项目的独特之处。之前 [qanything](https://zhuanlan.zhihu.com/p/697031773) 和 [ragflow](https://zhuanlan.zhihu.com/p/697902937) 同样能从架构图看出 RAG 项目设计差异。
+
+对于常规的 RAG 架构图，这张图可以明显看到大模型模块被明显放大，而且文件入库的流程都会先调用大模型。从大模型的输出来看，存在 `QA 拆分`， `文本分段` 和 `手动输入` 三种情况：
+
+- `文本分段` 是常规的 RAG 的处理方案
+- `QA 拆分` 看起来是基于原始文本生成问答对，这部分猜测应该是根据大模型生成问答对，之前 Dify 也有类似的功能，被称为 `Q&A 模式`
+- `手动输入` 则是直接输入问答对，这部分应该是手工输入数据进行补充；
+
+预计文件入库环节的大模型调用主要作用于 `QA 拆分`。
+
+**技术选型**
+
+官方给出的技术栈为：NextJs + TS + ChakraUI + Mongo + Postgres (Vector 插件)
+
+- [NextJs](https://www.nextjs.cn/docs/getting-started) 用于构建前后端服务，可以在单个工程中同时构建前后端代码，熟悉 Flask 应该对这个玩法不陌生，只是 Flask 是后端想把前端的活干了，而 NextJs 则是前端把后端的活干了；
+- TS 用于编写具体的代码；
+- [ChakraUI](https://v2.chakra-ui.com/) 是 UI 组件库；
+- MongoDB 是作为业务数据库使用，事实上 FastGPT 中的文件也是基于 MongoDB 的 [GridFS](https://www.mongodb.com/docs/manual/core/gridfs/) 进行存储;
+- Postgres 用于存储向量数据；
+
