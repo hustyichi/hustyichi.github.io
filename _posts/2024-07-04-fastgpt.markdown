@@ -49,3 +49,14 @@ FastGPT 被认为是一个基于 LLM 大语言模型的知识库问答系统，�
 - MongoDB 是作为业务数据库使用，事实上 FastGPT 中的文件也是基于 MongoDB 的 [GridFS](https://www.mongodb.com/docs/manual/core/gridfs/) 进行存储;
 - Postgres 用于存储向量数据；
 
+## 核心模块解读
+
+与常规的 Python 实现大模型应用不同，基于 TypeScript 没有类似 langchain 的框架，因此需要自行实现知识库构建的完整流程。
+
+#### 文件入库流程
+
+实际文件的入库对应的接口为 `api/core/dataset/collection/create/fileId`, 因为是基于 NextJs 实现的，接口与文件的组织结构是一样的，对应的处理实现是在 `projects/app/src/pages/api/core/dataset/collection/create/fileId.ts` 中
+
+文件入库会执行文件读取，切片，然后会依次写入支持库，在前面可以看到，实际会存在 `文本分片` 和 `QA 拆分` 两种不同的模式
+
+
