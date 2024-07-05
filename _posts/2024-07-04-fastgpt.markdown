@@ -13,7 +13,7 @@ tags:
 ---
 
 ## 背景介绍
-最近被不同的人安利了 [FastGPT](https://github.com/labring/FastGPT) 项目，实际上手体验了一下，实际的流程类似之前有调研过的 [Dify](https://zhuanlan.zhihu.com/p/706381113), 包含的功能主要是：任务流的编排，知识库管理，另外还有一些外部工具的调用能力。实际使用的页面如下所示：
+最近被不同的人安利了 [FastGPT](https://github.com/labring/FastGPT) 项目，实际上手体验了一下，使用流程类似之前调研过的 [Dify](https://zhuanlan.zhihu.com/p/706381113), 包含的功能主要是：任务流的编排，知识库管理，另外还有一些外部工具的调用能力。使用页面如下所示：
 
 ![usage](/img/in-post/fastgpt/usage.png)
 
@@ -21,17 +21,17 @@ tags:
 
 ![language](/img/in-post/fastgpt/language.png)
 
-难道后端 Python 只需要如此少的代码量就可以实现一个大模型应用了？接下来深入了解了 FastGPT 的实现，发现其 Python 为测试代码，完整的项目实现都是基于前端语言 ts 和 js 实现。这篇文章就主要介绍下 FastGPT 知识库 RAG 设计的实现细节。
+难道后端 Python 只需要如此少的代码量就可以实现一个大模型应用了？深入了解了 FastGPT 的实现，发现其 Python 为测试代码，完整的项目实现都是基于前端语言 ts 和 js 实现。这篇文章就主要介绍下 FastGPT 知识库 RAG 设计的实现细节。
 
 ## FastGPT 简介
 
-FastGPT 被认为是一个基于 LLM 大语言模型的知识库问答系统，与常规的 RAG 相比增加了额外工作流编排的能力，这部分类似 Dify。但是相对 Dify 而言，除了知识库之外的其他可调用的应用更少一些。按照习惯先查看项目的架构图：
+FastGPT 被设计为基于 LLM 大语言模型的知识库问答系统，与常规的 RAG 相比增加了额外工作流编排的能力，这部分类似 Dify。但是相对 Dify 而言可调用的第三方应用更少一些。按照习惯先查看项目的架构图：
 
 ![arch](/img/in-post/fastgpt/functional-arch.webp)
 
-一般而言，从架构图中就可以看到项目的独特之处。之前 [qanything](https://zhuanlan.zhihu.com/p/697031773) 和 [ragflow](https://zhuanlan.zhihu.com/p/697902937) 同样能从架构图看出 RAG 项目设计差异。
+一般而言，从架构图中就可以看到项目的独特之处。之前 [qanything](https://zhuanlan.zhihu.com/p/697031773) 和 [ragflow](https://zhuanlan.zhihu.com/p/697902937) 同样从架构图看出 RAG 项目的设计差异。
 
-对于常规的 RAG 架构图，这张图可以明显看到大模型模块被明显放大，而且文件入库的流程都会先调用大模型。从大模型的输出来看，存在 `QA 拆分`， `文本分段` 和 `手动输入` 三种情况：
+对于常规的 RAG 架构图，这张图可以明显看到大模型模块被放大，而且文件入库的流程都会先调用大模型。从大模型的输出来看，存在 `QA 拆分`， `文本分段` 和 `手动输入` 三种情况：
 
 - `文本分段` 是常规的 RAG 的处理方案
 - `QA 拆分` 看起来是基于原始文本生成问答对，这部分猜测应该是根据大模型生成问答对，之前 Dify 也有类似的功能，被称为 `Q&A 模式`
@@ -134,12 +134,25 @@ FastGPT 被认为是一个基于 LLM 大语言模型的知识库问答系统，�
     });
 ```
 
-在目前的流程中只是写入业务数据库 MongoDB，之后再根据 MongoDB 数据库中内容进行向量化
+在目前的流程中只是写入业务数据库 MongoDB，之后再根据 MongoDB 数据库中内容进行向量化。
 
+对于 QA 模式，可以查看对应的 prompt 设计：
+
+```
+标记中是一段文本，学习和分析它，并整理学习成果：\n
+- 提出问题并给出每个问题的答案。\n
+- 答案需详细完整，尽可能保留原文描述。\n
+- 答案可以包含普通文字、链接、代码、表格、公示、媒体链接等 Markdown 元素。\n
+- 最多提出 30 个问题。\n
+```
+
+可以看到就是基于大模型直接生成不超过 30 个问答对。
 
 #### 知识库检索
 
-FastGPT 的知识检索目前支持多种检索模式，主要关注下效果最好的混合检索， FastGPT 实现的是基于向量检索 + 文本检索实现的混合检索，并基于 [RRF](https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html) 实现多种检索结果的融合。对应的实现在 `packages/service/core/dataset/search/controller.ts` ，具体的简化后如下所示：
+FastGPT 的知识检索目前支持多种检索模式，主要关注下最复杂的混合检索。
+
+FastGPT 实现的是基于向量检索 + 文本检索实现的混合检索，并基于 [RRF](https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html) 实现多种检索结果的融合。对应的实现在 `packages/service/core/dataset/search/controller.ts` ，具体的简化后如下所示：
 
 ```javascript
   // 向量检索 + 文本检索召回
@@ -182,7 +195,9 @@ FastGPT 的知识检索目前支持多种检索模式，主要关注下效果最
 
 ```
 
-可以看到基本上中规中矩的策略。
+可以看到基本上是目前比较中规中矩的混合检索方案，只是转换为 TypeScript 进行了实现。
 
 ## 总结
-本文是对 FastGPT 现有知识库流程的解读，整体看起来 FastGPT 的处理流程中规中矩，通过前后端同样的语言，可以解决前后端代码复用的问题，借助 NextJs 也可以简化框架设计与部署，同时对团队的技术栈要求也更低了。但是因为没有使用 Python 实现后端服务，导致无法使用大量现有的大模型应用框架，为未来的拓展能力带来了一些限制，有得有失。
+本文是对 FastGPT 现有知识库流程的解读，整体看起来 FastGPT 的处理流程中规中矩。
+
+通过前后端使用相同的开发语言，可以解决前后端代码复用的问题，借助 NextJs 也可以简化框架设计与部署，同时对团队的技术栈要求也更低了。但是因为没有使用 Python 实现后端服务，导致无法使用大量现有的大模型应用框架，为未来的拓展能力带来了一些限制，有得有失。
