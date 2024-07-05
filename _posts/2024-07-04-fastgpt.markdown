@@ -57,6 +57,132 @@ FastGPT 被认为是一个基于 LLM 大语言模型的知识库问答系统，�
 
 实际文件的入库对应的接口为 `api/core/dataset/collection/create/fileId`, 因为是基于 NextJs 实现的，接口与文件的组织结构是一样的，对应的处理实现是在 `projects/app/src/pages/api/core/dataset/collection/create/fileId.ts` 中
 
-文件入库会执行文件读取，切片，然后会依次写入支持库，在前面可以看到，实际会存在 `文本分片` 和 `QA 拆分` 两种不同的模式
+文件入库会执行文件读取，切片，然后会依次写入知识库，实际会根据不同写入模式内容上有一些差异，具体的实现如下所示：
+
+```javascript
+  // 1. 读取文件
+  const { rawText, filename } = await readFileContentFromMongo({
+    teamId,
+    bucketName: BucketNameEnum.dataset,
+    fileId
+  });
+  // 2. 切片，文本分段会保留 20% 的重叠，QA 拆分则没有重叠
+  const chunks = rawText2Chunks({
+    rawText,
+    chunkLen: chunkSize,
+    overlapRatio: trainingType === TrainingModeEnum.chunk ? 0.2 : 0,
+    customReg: chunkSplitter ? [chunkSplitter] : []
+  });
+
+  // 3. 查询限制
+  await checkDatasetLimit({
+    teamId,
+    insertLen: predictDataLimitLength(trainingType, chunks)
+  });
+
+  await mongoSessionRun(async (session) => {
+    // 4. 构建知识库集合
+    const { _id: collectionId } = await createOneCollection({
+      ...body,
+      teamId,
+      tmbId,
+      type: DatasetCollectionTypeEnum.file,
+      name: filename,
+      fileId,
+      metadata: {
+        relatedImgId: fileId
+      },
+
+      // special metadata
+      trainingType,
+      chunkSize,
+      chunkSplitter,
+      qaPrompt,
+
+      hashRawText: hashStr(rawText),
+      rawTextLength: rawText.length,
+      session
+    });
+
+    // 5. 创建训练账单，确认消耗金额
+    const { billId } = await createTrainingUsage({
+      teamId,
+      tmbId,
+      appName: filename,
+      billSource: UsageSourceEnum.training,
+      vectorModel: getVectorModel(dataset.vectorModel)?.name,
+      agentModel: getLLMModel(dataset.agentModel)?.name,
+      session
+    });
+
+    // 6. 分片数据写入 MongoDB 数据库
+    await pushDataListToTrainingQueue({
+      teamId,
+      tmbId,
+      datasetId: dataset._id,
+      collectionId,
+      agentModel: dataset.agentModel,
+      vectorModel: dataset.vectorModel,
+      trainingMode: trainingType,
+      prompt: qaPrompt,
+      billId,
+      data: chunks.map((item, index) => ({
+        ...item,
+        chunkIndex: index
+      })),
+      session
+    });
+```
+
+在目前的流程中只是写入业务数据库 MongoDB，之后再根据 MongoDB 数据库中内容进行向量化
 
 
+#### 知识库检索
+
+FastGPT 的知识检索目前支持多种检索模式，主要关注下效果最好的混合检索， FastGPT 实现的是基于向量检索 + 文本检索实现的混合检索，并基于 [RRF](https://www.elastic.co/guide/en/elasticsearch/reference/current/rrf.html) 实现多种检索结果的融合。对应的实现在 `packages/service/core/dataset/search/controller.ts` ，具体的简化后如下所示：
+
+```javascript
+  // 向量检索 + 文本检索召回
+  const { embeddingRecallResults, fullTextRecallResults, tokens } = await
+    multiQueryRecall({
+      embeddingLimit,
+      fullTextLimit
+  });
+
+  // 重排序的支持
+  const reRankResults = await (async () => {
+    if (!usingReRank) return [];
+
+    set = new Set<string>(embeddingRecallResults.map((item) => item.id));
+    const concatRecallResults = embeddingRecallResults.concat(
+      fullTextRecallResults.filter((item) => !set.has(item.id))
+    );
+
+    // remove same q and a data
+    set = new Set<string>();
+    const filterSameDataResults = concatRecallResults.filter((item) => {
+      // 删除所有的标点符号与空格等，只对文本进行比较
+      const str = hashStr(`${item.q}${item.a}`.replace(/[^\p{L}\p{N}]/gu, ''));
+      if (set.has(str)) return false;
+      set.add(str);
+      return true;
+    });
+    return reRankSearchResult({
+      query: reRankQuery,
+      data: filterSameDataResults
+    });
+  })();
+
+  // 使用 rrf 合并向量检索和文本检索的结果
+  const rrfConcatResults = datasetSearchResultConcat([
+    { k: 60, list: embeddingRecallResults },
+    { k: 60, list: fullTextRecallResults },
+    { k: 58, list: reRankResults }
+  ]);
+
+```
+
+可以看到基本上中规中矩的策略。
+
+## 总结
+本文是对 FastGPT 现有知识库流程的解读，整体看起来 FastGPT 的处理流程中规中矩，通过前后端同样的语言，可以解决前后端代码复用的问题，借助 NextJs 也可以简化框架设计与部署，同时对团队的技术栈要求也更低了。但是因为没有使用 Python 实现后端服务，导致无法使用大量现有的大模型应用框架，为未来的拓展能力带来了一些限制，有得有失。
