@@ -1,0 +1,83 @@
+---
+layout: post
+title: "来自工业界的开源知识库 RAG 项目最全细节对比"
+subtitle:   "The most complete comparison of open source RAG projects from the industry"
+date:       2024-07-08 22:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - rag
+    - agent
+---
+
+## 背景介绍
+之前从原理到实现细节整理过来自工业界的不少开源 RAG 项目：
+
+- [有道 QAnything](https://zhuanlan.zhihu.com/p/697031773)
+- [RAGFlow](https://zhuanlan.zhihu.com/p/697902937)
+- [langchain-chatchat](https://zhuanlan.zhihu.com/p/689947142)
+- [中科院 GoMate](https://zhuanlan.zhihu.com/p/705218535)
+- [Dify](https://zhuanlan.zhihu.com/p/706381113)
+- [FastGPT](https://zhuanlan.zhihu.com/p/707152910)
+
+群里有小伙伴询问在实际的业务需求中如何选择合适的 RAG 项目，本文就详细对比一下这些项目，考虑到目前实际发展程度，GoMate 目前的可靠性还不适合在生产环境使用。因此主要对比其他几个更成熟的热门开源项目。
+
+如果只关心技术选项方案，可以直接看文末的总结。
+
+## 项目基础信息介绍
+主要关注项目的一些基础信息，可以给出初步选型比较：
+
+| 项目 |  Star 数量 | 持续维护性 | 文档完善度 | 社区活跃度 | 版权信息 |
+| --- |  --- | --- | --- | --- | --- |
+| [QAnything](https://github.com/netease-youdao/QAnything) | 10.6k | ⭐️ | ⭐️⭐️ | ⭐️⭐️ | Apache-2.0 |
+| [RAGFlow](https://github.com/infiniflow/ragflow) | 11.2k | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | ⭐️⭐️ | Apache-2.0 |
+
+
+1. Star 数量；
+2. 持续可维护性；
+3. 文档的完善程度；
+4.
+5. 社区活跃程度；
+7. 版权信息；
+代码质量；
+8. 使用技术栈；
+9. 二次开发的难度；
+
+
+## 项目框架对比
+主要比较不同项目的核心亮点，方便有针对性选择合适的项目
+
+
+## RAG 能力比较
+主要从两个维度比较下能力差异：
+
+1. 文件精细解析能力以及支持的格式；
+2. 知识检索效果比较；
+
+
+## Agent 能力比较
+为了更好地使用线上的业务，目前 RAG 框架都开始增加额外的 Agent 的能力，方便更好的适应业务场景。比较主要关注：
+
+1. 能否支持其他第三方工具；
+2. 能否支持任务流编排；
+
+
+## 项目部署比较
+RAG 涉及的内容比较多，部署的方案也存在差异，下面主要从两个方面比较差异：
+
+1. 部署难易程度；
+2. 是否支持离线部署；
+
+
+## 总结
+
+
+
+
+
+
+
+
+
