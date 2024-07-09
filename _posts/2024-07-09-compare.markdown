@@ -29,21 +29,31 @@ tags:
 ## 项目基础信息介绍
 主要关注项目的一些基础信息，可以给出初步选型比较：
 
-| 项目 |  Star 数量 | 持续维护性 | 文档完善度 | 社区活跃度 | 版权信息 |
+| 项目 |  Star 数量 | 持续维护性 | 社区活跃度 | 代码质量 | 版权信息 |
 | --- |  --- | --- | --- | --- | --- |
-| [QAnything](https://github.com/netease-youdao/QAnything) | 10.6k | ⭐️ | ⭐️⭐️ | ⭐️⭐️ | Apache-2.0 |
+| [QAnything](https://github.com/netease-youdao/QAnything) | 10.6k | ⭐️ | ⭐️⭐️ | ⭐️⭐️⭐️ | Apache-2.0 |
 | [RAGFlow](https://github.com/infiniflow/ragflow) | 11.2k | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | ⭐️⭐️ | Apache-2.0 |
+| [langchain-chatchat](https://github.com/chatchat-space/Langchain-Chatchat) | 29.7k | ⭐️⭐️⭐️ | ⭐️⭐⭐️ | ⭐️⭐️ | Apache-2.0 |
+| [Dify](https://github.com/langgenius/dify) | 36.7k | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | 附加条件的 Apache-2.0 |
+| [FastGPT](https://github.com/labring/FastGPT) | 15.3k | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | ⭐️⭐️ | 附加条件的 Apache-2.0 |
 
+- 项目热度上，Dify 和 langchain-chatchat 因为开源较早，star 数量最多，其他项目也属于比较热的了；
+- 项目可维护性上，除了 QAnything 之外的其他项目都在持续更新，QAnything 反馈 5-17 后就不会再新增新功能了，因此建议谨慎选择；
+- 代码质量上，QAnything 和 Dify 质量较高；
+- 版权问题上，Dify 和 FastGPT 限制不允许用于构建多租户的 Saas 服务，不允许去掉版权信息，其他的都没有限制；
 
-1. Star 数量；
-2. 持续可维护性；
-3. 文档的完善程度；
-4.
-5. 社区活跃程度；
-7. 版权信息；
-代码质量；
-8. 使用技术栈；
-9. 二次开发的难度；
+考虑到项目开箱即用的程度以及二次开发的难度，下面主要对比下技术栈：
+
+| 项目 | 前端技术栈 | 后端技术栈 |
+| --- |  --- | --- |
+| QAnything | 只有打包后前端文件，无法二次开发 | python + sanic |
+| RAGFlow | React + TypeScript | python + flask |
+| langchain-chatchat | Streamlit 实现的临时前端 | python + FastAPI |
+| Dify | NextJs + TypeScript | python + flask |
+| FastGPT | NextJs + TypeScript | NextJs + TypeScript |
+
+- 从前端角度来看，langchain-chatchat 没有生产环境可用的前端，QAnything 无法提供可修改的前端，其他几家都有可用的前端页面，技术栈都是基于 React 的
+- 从后端角度来看，除了 FastGPT 选择了基于 TypeScript 构建，其他都是基于 Python 开发的；
 
 
 ## 项目框架对比
