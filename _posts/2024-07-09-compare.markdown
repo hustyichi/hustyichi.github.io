@@ -13,7 +13,7 @@ tags:
 ---
 
 ## 背景介绍
-之前从原理到实现细节整理过来自工业界的不少开源 RAG 项目：
+之前详细整理过来自工业界的不少开源 RAG 项目：
 
 - [有道 QAnything](https://zhuanlan.zhihu.com/p/697031773)
 - [RAGFlow](https://zhuanlan.zhihu.com/p/697902937)
@@ -22,12 +22,12 @@ tags:
 - [Dify](https://zhuanlan.zhihu.com/p/706381113)
 - [FastGPT](https://zhuanlan.zhihu.com/p/707152910)
 
-群里有小伙伴询问在实际的业务需求中如何选择合适的 RAG 项目，本文就详细对比一下这些项目，考虑到目前实际发展程度，GoMate 目前的可靠性还不适合在生产环境使用。因此主要对比其他几个更成熟的热门开源项目。
+群里一直看到有小伙伴询问在实际的业务需求中如何选择合适的 RAG 项目，本文就详细对比一下这些 RAG 项目。考虑到目前实际发展程度，GoMate 目前的可靠性还不适合在生产环境使用。因此主要对比其他几个更成熟的热门开源项目。
 
-如果只关心技术选项方案，可以直接看文末的总结。
+如果只关心技术选项结论，可以直接跳到最后。
 
 ## 项目基础信息介绍
-主要关注项目的一些基础信息，可以给出初步选型比较：
+主要关注项目的一些基础信息，可以给出初步选型建议：
 
 | 项目 |  Star 数量 | 持续维护性 | 社区活跃度 | 代码质量 | 版权信息 |
 | --- |  --- | --- | --- | --- | --- |
@@ -37,10 +37,10 @@ tags:
 | [Dify](https://github.com/langgenius/dify) | 36.7k | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | 附加条件的 Apache-2.0 |
 | [FastGPT](https://github.com/labring/FastGPT) | 15.3k | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ | ⭐️⭐️ | 附加条件的 Apache-2.0 |
 
-- 项目热度上，Dify 和 langchain-chatchat 因为开源较早，star 数量最多，其他项目也属于比较热的了；
-- 项目可维护性上，除了 QAnything 之外的其他项目都在持续更新，QAnything 反馈 5-17 后就不会再新增新功能了，因此建议谨慎选择；
+- 项目热度上，Dify 和 langchain-chatchat 因为开源较早，star 数量最多，其他项目也属于比较热门的了；
+- 项目可维护性上，除了 QAnything 之外的其他项目都在持续更新，QAnything 5 月 17 后就不再新增功能了，因此建议谨慎选择；
 - 代码质量上，QAnything 和 Dify 质量较高；
-- 版权问题上，Dify 和 FastGPT 限制不允许用于构建多租户的 Saas 服务，不允许去掉版权信息，其他的都没有限制；
+- 版权问题上，Dify 和 FastGPT 限制不允许用于构建多租户的 Saas 服务，同时不允许去掉版权信息，其他项目没有限制；
 
 考虑到项目开箱即用的程度以及二次开发的难度，下面主要对比下技术栈：
 
@@ -50,7 +50,7 @@ tags:
 | RAGFlow | React + TypeScript | python + flask |
 | langchain-chatchat | Streamlit 实现的临时前端 | python + FastAPI |
 | Dify | NextJs + TypeScript | python + flask |
-| FastGPT | NextJs + TypeScript | NextJs + TypeScript |
+| FastGPT | NextJs + TypeScript | TypeScript + NextJs |
 
 - 从前端角度来看，langchain-chatchat 没有生产环境可用的前端，QAnything 无法提供可修改的前端，其他几家都有可用的前端页面，技术栈都是基于 React 的
 - 从后端角度来看，除了 FastGPT 选择了基于 TypeScript 构建，其他都是基于 Python 开发的；
@@ -75,7 +75,7 @@ tags:
 
 ![langchain-chatchat](/img/in-post/compare/langchain-chatchat.png)
 
-- 强调支持离线私有化部署，对于私有化部署支持完善
+- 强调支持离线私有化部署，对于私有化部署支持完善，但是从 langchain-0.3.0 之后部署方式也发生了变化，与其他项目的差异不大；
 
 **Dify**
 
@@ -92,11 +92,11 @@ tags:
 - 支持 QA 模式，可以基于原始文档生成问答对进行召回；
 - 支持工作流编排；
 
-总结而言，如果对于文件精细解析感兴趣，可以优先选择 RAGFlow。如果重点关注离线部署，可以看看 langchain-chatchat。如果希望具备任务流编排或 Agent 相关能力，可以关注 Dify 和 FastGPT
+初步看来，如果对于文件精细解析感兴趣，可以优先选择 RAGFlow。如果希望具备任务流编排或 Agent 相关能力，可以关注 Dify 和 FastGPT
 
 
 ## RAG 能力比较
-作为 RAG 服务，从我目前了解的信息来看，主要关注下面的一些基础能力：
+作为 RAG 服务，从目前了解的信息来看，主要关注下面的一些基础能力：
 
 1. 文件的精细解析能力，是否能支持常规格式，是否具备结构化分片与检索的能力；
 2. 知识库检索效果，因为知识库检索是 RAG 的核心能力，能否高质量召回直接决定 RAG 的最终表现；
@@ -119,7 +119,7 @@ tags:
 
 ## Agent 能力比较
 
-目前实际在生产环境使用时，除了单纯的知识库检索之外，可能会需要拓展其他外部工具，并根据业务流程实际情况编排现有的组合，因此主要关注下面两部分能力：
+目前实际在生产环境使用时，除了单纯的知识库检索之外，可能会需要拓展其他外部工具，并根据业务流程编排现有工具列表，因此主要关注下面两部分能力：
 
 - 能否拓展支持其他工具；
 - 能否支持任务流编排；
@@ -130,7 +130,7 @@ tags:
 | --- |  --- | --- |
 | QAnything | ⭐️ | ⭐️ |
 | RAGFlow | ⭐️ | ⭐️⭐️ |
-| langchain-chatchat | ⭐️ | ⭐️ |
+| langchain-chatchat | ⭐️⭐️ | ⭐️ |
 | Dify | ⭐️⭐️⭐️ | ⭐️⭐️⭐️ |
 | FastGPT | ⭐️⭐️ | ⭐️⭐️⭐️ |
 
@@ -152,16 +152,19 @@ RAG 涉及的不同的服务以及模型的部署，选择 RAG 方案的企业�
 | Dify | ⭐️⭐️ | ⭐️⭐️ |
 | FastGPT | ⭐️⭐️ | ⭐️⭐️ |
 
-从目前来看，项目部署都是基于 docker 进行部署，如果需要在离线环境部署，需要下载准备 docker 镜像。部分项目提供了源码安装的方式，但是操作会繁琐很多，建议还是优先选择 docker 方案。
+从目前来看，项目部署都是基于 docker 进行部署。大模型的加载都是基于 Xinference 或 Ollama 等外部服务。
+
+如果需要在离线环境部署，需要自行下载所需 docker 镜像。部分项目提供了源码安装的方式，但是操作会繁琐很多，建议优先选择 docker 方案。
 
 ## 总结
 
-本文对比了目前比较热门的 RAG 项目，给出一些推荐建议：
+本文对比了目前比较热门的开源 RAG 项目，给出一些推荐建议：
 
-- 综合评价最完备的应该是 Dify，功能比较完善，而且可拓展性较好，但是需要注意版权问题，另外 RAG 检索效果不佳的问题需要进行一些优化；
+- 综合评价最完备的应该是 Dify，功能比较完善，可拓展性较好，但是需要注意版权问题，另外 RAG 检索效果不佳的问题也需要进行一些优化；
 - 如果不熟悉 Python 技术栈，希望尽可能专注业务功能的开发，那么可以优先选择 FastGPT；
 - 如果对高质量的文件解析比较在意，可以参考 RAGFlow；
-- 如果希望不借助 docker 快速搭建离线的 RAG 演示 demo，那么可以考虑 langchain-chatchat 0.2.x, langchain chatchat 0.3.0 以后也将模型部署迁移出去，相关设计也与其他方案差异不大了。
+- 如果希望不借助 docker 快速搭建离线的 RAG 演示 demo，那么可以考虑 langchain-chatchat 0.2.x, langchain chatchat 0.3.0 以后也将模型部署迁移出去，部署方案与其他项目差异不大了；
+- QAnything 就不建议选择了，RAG 技术目前发展得很快，官方不维护的项目后续很难与其他项目竞争；
 
 
 
