@@ -59,6 +59,41 @@ tags:
 ## 项目框架对比
 主要比较不同项目的核心亮点，方便有针对性选择合适的项目
 
+**QAnything**
+
+![qanything](/img/in-post/compare/qanything_arch.png)
+
+- 重点强调 Rerank 机制，强调 Embedding + Rerank 模型的联合使用可以提升文档召回质量；
+
+**RAGFlow**
+
+![ragflow](/img/in-post/compare/ragflow-arch.png)
+
+- 重点强调文档的精细化解析，在文档解析上做了不少优化；
+
+**langchain-chatchat**
+
+![langchain-chatchat](/img/in-post/compare/langchain-chatchat.png)
+
+- 强调支持离线私有化部署，对于私有化部署支持完善
+
+**Dify**
+
+![dify](/img/in-post/compare/dify.png)
+
+- 丰富的召回模式，支持跨知识库召回；
+- 支持 QA 模式，可以基于原始文档生成问答对进行召回；
+- 支持工作流编排；
+
+**FastGPT**
+
+![fastgpt](/img/in-post/compare/fastgpt.webp)
+
+- 支持 QA 模式，可以基于原始文档生成问答对进行召回；
+- 支持工作流编排；
+
+总结而言，如果对于文件精细解析感兴趣，可以优先选择 RAGFlow。如果重点关注离线部署，可以看看 langchain-chatchat。如果希望具备任务流编排或 Agent 相关能力，可以关注 Dify 和 FastGPT
+
 
 ## RAG 能力比较
 主要从两个维度比较下能力差异：
