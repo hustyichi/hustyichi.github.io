@@ -120,7 +120,7 @@ def search_by_vector(self, query_vector: list[float], **kwargs: Any) -> list[Doc
 
 Dify 定义的全文检索事实上实现的就是 BM25 检索，主要利用向量库现有的能力实现，目前大部分向量库都不支持全文检索，这种情况下会直接返回空列表。
 
-我们选择一个支持全文检索的向量库 qdrant 为例查看对应的实现，全文检索调用的方法为 `search_by_full_text`, 对应的实现如下所示：
+我们选择一个支持全文检索的向量库 qdrant 为例查看对应的实现，全文检索调用的方法为 `search_by_full_text`, qdrant 对应的实现如下所示：
 
 ```python
 def search_by_full_text(self, query: str, **kwargs: Any) -> list[Document]:
@@ -166,7 +166,7 @@ def search_by_full_text(self, query: str, **kwargs: Any) -> list[Document]:
 
 #### 多知识库召回
 
-从上面可以看到，单知识库的检索不涉及大模型调用，那么只能继续跟踪调用链路反向追踪，追踪到知识库检索节点的调用在 `api/core/workflow/nodes/knowledge_retrieval/knowledge_retrieval_node.py` 中，在调用单个知识库检索前，会包含一个多知识库库召回判断，其中涉及两种召回模式：
+从上面可以看到，单知识库的检索不涉及大模型调用，那么只能继续跟踪调用链路反向追踪。实际发现知识库检索节点的调用在 `api/core/workflow/nodes/knowledge_retrieval/knowledge_retrieval_node.py` 中，在调用单个知识库检索前，会包含一个多知识库库召回判断，其中涉及两种召回模式：
 
 - `N 选 1 召回`：先根据用户输入的意图选择合适的知识库，然后从知识库检索所需的文档，适用于知识库彼此隔离，不需要互相联合查询的场景；
 - `多路召回`：此时会同时从多个知识库检索，然后进行重新排序，适用于知识库需要联合查询的场景。
@@ -177,7 +177,7 @@ def search_by_full_text(self, query: str, **kwargs: Any) -> list[Document]:
 
 看起来问题就出现在这个环节了，接下来就需要了解为什么本地会使用一个不存在的 GPT3.5 大模型。
 
-深入查看 `N 选 1 召回` 的大模型初始化，可以看到对应的实现在 `api/core/workflow/nodes/knowledge_retrieval/knowledge_retrieval_node.py` 中：
+深入查看 `N 选 1 召回` 调用的大模型的初始化环节，可以看到对应的实现在 `api/core/workflow/nodes/knowledge_retrieval/knowledge_retrieval_node.py` 中：
 
 ```python
 def _fetch_model_config(self, node_data: KnowledgeRetrievalNodeData):
@@ -207,13 +207,13 @@ def _fetch_model_config(self, node_data: KnowledgeRetrievalNodeData):
 
 接下来尝试手工创建一个知识库检索节点，在手工创建了知识库检索节点后，查看对应的 config，发现使用的模型确实是正确的 `glm-4-9b-chat`。
 
-查看前端创建节点时调用 `/api/workspaces/current/default-model` 接口获取默认模型，对应的返回值也是正确的 `glm-4-9b-chat`，看起来构建节点的默认选择模型机制是没有问题的。
+查看前端创建节点时发现会调用 `/api/workspaces/current/default-model` 接口获取默认模型，对应的返回值也是正确的 `glm-4-9b-chat`，看起来构建节点的默认选择模型机制是没有问题的。
 
-那么为什么最初初始化时会生成一个错误的 GPT3.5 模型呢？那么只能猜测是默认模板的知识库选择了 GPT3.5 模型，那么这个 `N 选 1 召回` 的模型是如何设置的呢？尝试点击了 `N选1召回` 按钮，看到了如下所示的页面：
+那么为什么最初初始化时会生成一个错误的 GPT3.5 模型呢？只能猜测是默认模板的知识库选择了 GPT3.5 模型，那么这个 `N 选 1 召回` 的模型是如何设置的呢？尝试点击了 `N选1召回` 按钮，就看到了如下所示的页面：
 
 ![n1_model](/img/in-post/dify-issue/n1_model.png)
 
-可以看到其中的系统推理模型选择的是 GPT3.5，这边可以选择和修改对应模型，至此所有的问题都一清二楚了。
+可以看到其中的系统推理模型选择的是 GPT3.5，这个页面可以修改对应的大模型，至此所有的问题都一清二楚了。
 
 ## 总结
 
