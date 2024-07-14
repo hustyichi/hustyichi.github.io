@@ -1,7 +1,7 @@
 ---
 layout: post
-title: "定位 Dify 知识库检索时的大模型调用异常"
-subtitle:   "Accurately locate large model call anomalies that occur during Dify knowledge base retrieval"
+title: "深入 Dify 源码，定位知识库检索的大模型调用异常"
+subtitle:   "Go deep into the Dify source code and locate large model call anomalies in knowledge base retrieval"
 date:       2024-07-14 11:00:00
 author:     "Bryan"
 header-mask: 0.3
@@ -14,22 +14,22 @@ tags:
 
 ## 背景介绍
 
-之前在私有服务器上部署了 [Dify 服务](https://zhuanlan.zhihu.com/p/708339594) ，使用的是 Dify 与 Xinference 组合，Xinference 部署的大模型是 [THUDM/glm-4-9b-chat](https://huggingface.co/THUDM/glm-4-9b-chat)。
+之前在 GPU 服务器上部署了 [Dify 服务](https://zhuanlan.zhihu.com/p/708339594) ，使用的是 Dify 与 Xinference 组合，Xinference 部署的大模型是 [THUDM/glm-4-9b-chat](https://huggingface.co/THUDM/glm-4-9b-chat)。
 
-接下来构建了本地知识库，并参考首页提供的任务流模板创建了一个最简单的 RAG 工作流
+基于本地部署的服务构建了知识库，并利用首页提供的任务流模板创建了一个 RAG 工作流
 
 ![template](/img/in-post/dify-issue/template.png)
 
-预期应该就可以正常工作了，但是实际发布应用发现，执行时会报错知识库检索链路上会报错 GPT3.5 模型不存在，除了错误信息以外没有其他额外信息，问题有点诡异：
+实际运行此应用聊天时发现，知识库检索节点执行时会报错 GPT3.5 模型不存在，除了错误信息以外没有其他额外信息可供进一步定位问题，这个情况存在两个诡异之处：
 
-1. 知识库检索环节预期不需要调用大模型，实际为什么会调用大模型；
+1. 知识库检索环节预期不需要调用大模型，实际却调用了大模型；
 2. 本地没有配置 GPT3.5, 为什么会选择 GPT3.5 模型；
 
-这篇文章就从源码出发，定位问题的根本原因。
+这篇文章就从问题出发，借助源码与对应的服务 API 请求信息，定位问题的根本原因。
 
 ## 问题定位
 
-为了定位这个问题，结合之前梳理的 [Dify 源码解析](https://zhuanlan.zhihu.com/p/706381113) 中的调用链路，我们可以快速找到相关实现代码。
+为了定位这个问题，结合之前梳理的 [Dify 源码解析](https://zhuanlan.zhihu.com/p/706381113) 中的调用链路，我们可以快速找到相关实现。
 
 #### 知识库检索
 
@@ -39,7 +39,7 @@ tags:
 - 向量检索
 - 全文检索
 
-看看是否有任何特殊之处
+看看是否有任何特殊设计，从而导致需要调用大模型进行处理。
 
 **关键词检索**
 
@@ -84,7 +84,7 @@ def search(
     return documents
 ```
 
-可以看到关键词检索就是从分块后的文本中提取关键词，之后从查询语句中提取关键词，之后利用关键词直接匹配即可。
+看到关键词检索就是从分块后的文本中提取关键词，构造关键词表。之后从查询语句中提取关键词，与关键词表进行匹配，从而确定匹配的数据块。
 
 **向量检索**
 
@@ -114,13 +114,13 @@ def search_by_vector(self, query_vector: list[float], **kwargs: Any) -> list[Doc
     return docs
 ```
 
-可以看到就一个客户端的检索调用，实现并不复杂
+可以看到就一个客户端的检索调用，看起来没有任何使用任何大模型。
 
 **全文检索**
 
-全文检索事实上实现的就是 BM25 检索，主要利用向量库现有的能力实现，目前大部分向量库都不支持全文检索，这种情况下直接返回空列表。
+Dify 定义的全文检索事实上实现的就是 BM25 检索，主要利用向量库现有的能力实现，目前大部分向量库都不支持全文检索，这种情况下会直接返回空列表。
 
-我们选择一个支持全文检索的向量库 qdrant 为例查看对应的实现，全文检索对应的方法为 `search_by_full_text`, 对应的实现如下所示：
+我们选择一个支持全文检索的向量库 qdrant 为例查看对应的实现，全文检索调用的方法为 `search_by_full_text`, 对应的实现如下所示：
 
 ```python
 def search_by_full_text(self, query: str, **kwargs: Any) -> list[Document]:
