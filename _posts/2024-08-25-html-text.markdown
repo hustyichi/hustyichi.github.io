@@ -1,0 +1,162 @@
+---
+layout: post
+title: "深入源码，洞察迭代 8 年的 html 文本转换库"
+subtitle:   "Dive into the source code and gain insights into the html text conversion library that has been iterating for 8 years"
+date:       2024-08-25 16:40:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - python
+    - rag
+    - html
+---
+
+## 背景介绍
+在前面 [RAG 项目结构化文件解析方案比较](https://zhuanlan.zhihu.com/p/712193089) 文章中对常见的 html 解析方案进行了比较，发现 html_text + python-readability 可以实现高质量的 html 内容提取。
+
+在前一篇文章 [迭代 14 年的高质量 html 提取方案](https://zhuanlan.zhihu.com/p/716415070) 中对 python-readability 库进行了介绍，这篇文章就对剩下的 [html_text](https://github.com/zytedata/html-text) 库进行介绍。
+
+## html_text 简介
+
+html_text 是一个 html 文本提取库，可以将 html 内容转换为文本内容，但是与常规 html 解析库相比，html_text 转换出的文本更加格式化：
+
+- 忽略内联样式、javascript、注释和其他用户通常不可见的文本；
+- 空白内容标准化，在内联元素周围添加空格分隔内容；
+- 在合适的位置添加换行符，与浏览器呈现的效果保持一致；
+
+整体而言，html_text 通过补充合适的空格和换行符，将解析出的文本更加接近浏览器呈现的效果。
+
+在之前的测试中，对于下面的文本内容：
+
+![test](/img/in-post/html-text/test.png)
+
+使用 unstructed 解析出的文本元素内容为：
+
+![unstructed](/img/in-post/html-text/unstructed.png)
+
+但是 html_text 解析出的文本内容为：
+
+![html_text](/img/in-post/html-text/html_text.png)
+
+这样可以为后续的处理提供一个更准确的文本内容，避免大量碎片化的无意义文本。
+
+## 实现方案
+
+html_text 库的源码比较精简，核心的代码不到 100 行。在开始介绍实现方案前，可以先大致了解下常规的 html 结构，类似如下所示：
+
+```html
+<html>
+    <body>
+        <p>
+            <div>test</div>
+        </p>
+    </body>
+</html>
+```
+
+可以看到常规的 html 元素一般都包含开始和结束部分，比如 `<p>` 代表段落开始，`</p>` 代表段落结束，因此依次遍历 html 元素时，一般会需要依次经历 html 元素的开始和结束事件。
+
+#### 整体流程
+
+html_text 的主要解析流程就是依次遍历 html 元素的开始和结束事件，之后根据元素 tag 添加必要的换行符和空格，保证与浏览器呈现效果的一致性：
+
+```python
+for event, el in lxml.etree.iterwalk(tree, events=('start', 'end')):
+    # html 开始事件，在元素前添加换行符，之后添加 html 元素文本内容
+
+    if event == 'start':
+        add_newlines(el.tag)
+        add_text(el.text)
+    # html 结束事件，在元素后添加换行符，如果存在元素尾部文本，补充元素尾部文本
+
+    elif event == 'end':
+        add_newlines(el.tag)
+        if el is not tree:
+            add_text(el.tail)
+```
+
+可以看到，主要依赖 `add_newlines()` 为 html 元素前后添加换行符进行换行元素的分隔，这样避免换行元素提取的内容合并为单行。
+
+同时在 `add_text()` 方法中在元素前添加必要的空格，从而保证内联元素的内容合理分隔。
+
+#### 换行符添加
+
+换行符的添加主要根据 html 的 tag 进行判断，预先定义部分 tag 换行符的数量，部分元素会在内容前后添加两个换行符，比如 `h1` 或 `p`, 部分元素则会添加一个换行符，比如 `dd` 或 `li`。内联元素则不会添加换行符，比如 `<span>`：
+
+```python
+def add_newlines(tag):
+    nonlocal prev
+
+    if prev is _DOUBLE_NEWLINE:  # don't output more than 1 blank line
+        return
+
+    # tag 对应需要添加两个换行符
+
+    if tag in double_newline_tags:
+        chunks.append('\n' if prev is _NEWLINE else '\n\n')
+        prev = _DOUBLE_NEWLINE
+    #  tag 对应需要添加一个换行符
+
+    elif tag in newline_tags:
+        if prev is not _NEWLINE:
+            chunks.append('\n')
+        prev = _NEWLINE
+```
+
+通过上面的设计，可以将 html 的内容分隔为类似的 html 元素展现的形式。
+
+#### 空格添加
+
+空格主要用于分隔内联元素，实际会根据当前元素与前一个内容确定是否需要补充空格，比如前一个内容是换行符，那么就不需要额外补充空格，如果前一个是内联元素的文本内容，那么就需要额外的空格进行分隔：
+
+```python
+def add_text(text_content):
+    nonlocal prev
+    text = _normalize_whitespace(text_content) if text_content else ''
+    if not text:
+        return
+
+    # 判断是否需要补充空格
+
+    space = get_space_between(text)
+    chunks.extend([space, text])
+    prev = text_content
+```
+
+## 强化方案
+
+当前的 html_text 已经具备从 html 中提取类似浏览器呈现效果的文本内容的能力，但是直接将转换的文本能力依旧无法满足现在 RAG 高质量文本提取的需求。
+
+在 RAG 服务的中，需要具备按照文本结构进行切分的能力，一般情况下期望可以按照段落切分，同时可以获取各个段落不同层级的标题，方便后续作为元信息进行检索。因此需要在 html_text 中具备返回段落切片与层级标题的能力。
+
+**段落切片**
+
+段落切片的实现比较简单，可以在处理遍历 html 元素时对段落元素进行额外处理，当开始新的段落时，返回前一个段落的分片即可。
+
+**层级标题获取**
+
+层级标题的方案会更复杂一些，但是依旧可以可行，在遍历 html 元素过程中使用层级标题栈维护之前遍历的各个层级的标题，动态更新标题栈保证按照从高往低的顺序即可。实现简化如下所示：
+
+```python
+def update_current_hierarchy_titles(tag=None, text=None):
+    nonlocal current_hierarchy_titles
+
+    # 每次将不超过当前栈层级的标题移出，保证栈中标题的有序性
+
+    while (
+        current_hierarchy_titles
+        and compare_html_tags(current_hierarchy_titles[-1][0], tag) <= 0
+    ):
+        current_hierarchy_titles.pop()
+
+    # 将当前标题入栈
+
+    current_hierarchy_titles.append((tag.strip(), text.strip()))
+```
+
+## 总结
+本文是对 html_text 文本提取库的一个简单介绍，主要包含了 html_text 文本转换的实现机制以及一些适用于 RAG 的强化方案，目前此方案已经在实践中进行了验证，从实际测试效果还不错，有需要的同学可以试试。完整的强化版本的代码可以在 [Github](https://github.com/hustyichi/dify-rag/blob/main/dify_rag/extractor/html/html_text.py) 中查看。
+
+
+
