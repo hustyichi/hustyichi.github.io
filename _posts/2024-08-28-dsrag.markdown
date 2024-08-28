@@ -17,13 +17,13 @@ tags:
 最近有注意到一款有些另类的 RAG 框架 dsRAG，使用了较多新的设计，因此花了一些时间对其核心亮点进行了考察，整理相关内容在这边。
 
 ## 核心亮点
-[spRAG](https://github.com/D-Star-AI/dsRAG) 官方的介绍是一款高性能非结构化数据检索引擎，从 2024 年 4 月开源至现在，Github star 数量为 730。相对其他 RAG 项目动辄几千 star 的量级，spRAG 属于比较冷门的了。
+[dsRAG](https://github.com/D-Star-AI/dsRAG) 官方的介绍是一款高性能非结构化数据检索引擎，从 2024 年 4 月开源至现在，Github star 数量为 730。相对其他 RAG 项目动辄几千 star 的量级，dsRAG 属于比较冷门的了。
 
-从实际了解的情况来看，这个现状也比较正常，spRAG 确实不太适合用在生产环境。但是不可否认 spRAG 的独特之处确实值得了解下：
+从实际了解的情况来看，这个现状也比较正常，dsRAG 确实不太适合用在生产环境。但是不可否认 dsRAG 的独特之处确实值得了解下：
 
-1. 语义分块（Semantic sectioning）：相对其他框架大多采取 Level 2 级别的递归字符切片，部分实现的是 Level 3 的基于文件类型的切片方案，而 spRAG 实现的是 Level 4 级别的语义分块，有兴趣了解切片的层级表示可以查看 [5_Levels_Of_Text_Splitting](https://github.com/FullStackRetrieval-com/RetrievalTutorials/blob/main/tutorials/LevelsOfTextSplitting/5_Levels_Of_Text_Splitting.ipynb) ;
+1. 语义分块（Semantic sectioning）：相对其他框架大多采取 Level 2 级别的递归字符切片，部分实现的是 Level 3 的基于文件类型的切片方案，而 dsRAG 实现的是 Level 4 级别的语义分块，有兴趣了解切片的层级表示可以查看 [5_Levels_Of_Text_Splitting](https://github.com/FullStackRetrieval-com/RetrievalTutorials/blob/main/tutorials/LevelsOfTextSplitting/5_Levels_Of_Text_Splitting.ipynb) ;
 2. 自动上下文（AutoContext）：这个是指在分块的内容前增加额外的上下文信息，这样可以提升单个块的内容的可检索性。目前大部分 RAG 框架都没有实现对应的能力；
-3. 文本块智能组合（Relevant Segment Extraction）：为了避免分片信息不完整的问题，spRAG 会将检索的文本块智能组合，这样在复杂问题时可以提供更完整的信息。目前大部分的 RAG 框架同样实现类似的功能；
+3. 文本块智能组合（Relevant Segment Extraction）：为了避免分片信息不完整的问题，dsRAG 会将检索的文本块智能组合，这样在复杂问题时可以提供更完整的信息。目前大部分的 RAG 框架同样实现类似的功能；
 
 下面就主要围绕上面提到的亮点，深入到源码层面，理解其中的技术细节。
 
@@ -33,7 +33,7 @@ tags:
 
 语义分块是指基于语义的相似性来文本切分，[langchain](https://python.langchain.com/v0.1/docs/modules/data_connection/document_transformers/semantic-chunker/) 中就实现了类似的能力，就是将原始文本切分为句子，之后比较句子向量的相似性，如果相似性超过一定的阈值，则进行切分。
 
-spRAG 的语义分块是基于大模型实现，主要的流程如下所示：
+dsRAG 的语义分块是基于大模型实现，主要的流程如下所示：
 
 1. 将原始的文本按照换行符 `\n` 切分为按行的句子；
 2. 利用大模型生成分片方案，考虑到大模型的语义理解能力，大模型给出的分片可能比常规的向量模型更准确；
@@ -79,9 +79,9 @@ client.chat.completions.create(
 
 比如以一个疾病的论文为例，可能会存在一段介绍疾病对应的治疗方案，但是治疗方案的内容中可能没有相关疾病的描述，如果检索相关病例的治疗手段，可能会发现没办法检索到相关的治疗方案。
 
-spRAG 补充的上下文信息目前支持文档标题，文档摘要，文档块的标题，文档块的摘要。这些内容从何而来呢？答案与上面的分片一样：大模型。
+dsRAG 补充的上下文信息目前支持文档标题，文档摘要，文档块的标题，文档块的摘要。这些内容从何而来呢？答案与上面的分片一样：大模型。
 
-spRAG 为上面的四种类型的数据分别实现一个对应的 prompt，之后就可以借助大模型实现对应的功能了，举例来看，实现文档标题的对应的 prompt 如下所示：
+dsRAG 为上面的四种类型的数据分别实现一个对应的 prompt，之后就可以借助大模型实现对应的功能了，举例来看，实现文档标题的对应的 prompt 如下所示：
 
 ```python
 DOCUMENT_TITLE_PROMPT = """
@@ -103,7 +103,7 @@ DOCUMENT
 
 #### 文本块智能组合
 
-文本智能组合（Relevant Segment Extraction, RSE）是将检索到的文本块进行聚类，并进行智能组合形成更长的文本。通过类似的方案，spRAG 在回答复杂问题，特别是需要跨越多个文本的问题时就具备明显优势。
+文本智能组合（Relevant Segment Extraction, RSE）是将检索到的文本块进行聚类，并进行智能组合形成更长的文本。通过类似的方案，dsRAG 在回答复杂问题，特别是需要跨越多个文本的问题时就具备明显优势。
 
 根据官方给出的测试数据来看，RSE 是对效果影响最大的策略，官方测试评分如下所示：
 
