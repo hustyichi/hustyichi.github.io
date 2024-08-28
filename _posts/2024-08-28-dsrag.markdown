@@ -1,7 +1,7 @@
 ---
 layout: post
-title: "来自工业界的知识库 RAG（六），另类的 RAG 框架 dsRAG 源码解读"
-subtitle:   "RAG services from industry (6)，detailed explanation of dsRAG source code"
+title: "来自工业界的知识库 RAG（六），另类的 RAG 框架 dsRAG 核心亮点解读"
+subtitle:   "RAG services from industry (6)，an Interpretation of the Core Highlights of the RAG Framework dsRAG"
 date:       2024-08-28 09:00:00
 author:     "Bryan"
 header-mask: 0.3
