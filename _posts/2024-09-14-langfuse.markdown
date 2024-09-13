@@ -1,0 +1,64 @@
+---
+layout: post
+title: "你的大模型应用表现真的好吗？借助 Dify + Langfuse 一探究竟"
+subtitle:   "Is your large model application really performing well? Find out with Dify + Langfuse"
+date:       2024-09-14 09:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - dify
+    - langfuse
+    - agent
+    - llm
+---
+
+## 背景介绍
+众所周知，大模型应用的输出存在着一些不确定性，往往需要迭代多轮才能得到较为稳定的输出结果，因此开发者往往需要关注大模型应用的输出结果，并进行有针对性的优化。
+
+然而常规 Web 服务的监控机制往往无法满足大模型应用的监控需求，因为大模型应用往往关注的不仅仅是响应延迟、吞吐量等指标，而是需要关注大模型应用输出的语义表现。因此，本文将介绍如何借助 Dify 和 Langfuse 工具，展示如何进行大模型应用的监控和优化。
+
+## 基础介绍
+
+#### Dify
+[Dify](https://github.com/langgenius/dify) 是一款热门的开源 LLMOps 服务，作为一个大模型应用的基础设施，可以帮助开发者快速构建 LLM 应用。关于 Dify 的介绍之前整理过很多，比如 [大模型应用基础服务 Dify 深度解读](https://zhuanlan.zhihu.com/p/706381113), 感兴趣的可以去了解下。
+
+#### Langfuse
+
+[Langfuse](https://github.com/langfuse/langfuse) 是一款开源的大模型应用监控服务，可以为大模型应用提供监控能力。比如在 Dify 复杂的任务流中，可以借助 Langfuse 跟踪各个环节输出的结果，方便深入定位问题。
+
+除了常规的内容监控外，Langfuse 还有两个值得重点关注的能力：
+
+1. LLM 评估，可以借助大模型评估现有业务输出的内容，充当 [LLM-as-a-Judge](https://arxiv.org/abs/2306.05685) 角色。考虑到大模型应用输出的都是大量的文本内容，常规的评估方式往往无法满足需求，因此借助 LLM 评估可以更精准快速地评估输出内容（这个功能目前 Langfuse 还处于实验阶段，私有化部署暂时还不支持，预计后续会很快上线）；
+2. 数据集管理，数据集管理可以帮助我们通过批量标准手段快速测试大模型应用，在进行大模型应用优化时，可以借助数据集管理快速测试优化后的效果，避免负优化；
+
+Dify 官方目前直接支持的监控方案为 LangSmith 和 Langfuse。 LangSmith 功能更强，但是是需要付费的，而且没有提供私有化部署的能力，因此 Langfuse 算是一个开源的替代方案。
+
+## 部署与集成
+
+#### 服务部署
+
+Dify 和 Langfuse 都提供了不同的部署方案，常规情况下，如果希望进行私有化部署，基于 docker compose 的方案是最省心的。
+
+Dify 的部署流程可以参考 [Dify Docker Compose 部署](https://docs.dify.ai/v/zh-hans/getting-started/install-self-hosted/docker-compose)
+
+Langfuse 的部署流程可以参考 [Langfuse Docker Compose 部署](https://langfuse.com/docs/deployment/local)
+
+#### 服务集成
+
+Dify 官方提供了对 Langfuse 的支持，因此可以在 Dify 应用中通过配置 Langfuse 地址，public key, secret key 信息，就可以快速集成 Langfuse 服务。
+
+![langfuse](/img/in-post/langfuse/langfuse.png)
+
+详细的服务集成的流程可以参考 [Dify 官方文档中 Langfuse 集成](https://docs.dify.ai/v/zh-hans/guides/monitoring/integrate-external-ops-tools/integrate-langfuse)
+
+服务集成之后，在 Dify 应用中进行正常使用，就可以跟踪输出结果与应用中间环节的输出了，实际测试跟踪效果如下所示：
+
+![usage](/img/in-post/langfuse/usage.png)
+
+以 RAG 应用为例，可以跟踪最终输出，同时右侧也可以看到中间知识检索的结果，方便深入定位各个环节中的问题。
+
+## 数据集与自动化评估
+
+在大模型应用的持续迭代中，为了验证迭代效果，往往会构建一个标准的自动化测试数据集。基于标准的数据集与大模型自动化评估手段，可以快速直观看到优化后的效果差异。
+
