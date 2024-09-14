@@ -60,5 +60,53 @@ Dify 官方提供了对 Langfuse 的支持，因此可以在 Dify 应用中通�
 
 ## 数据集与自动化评估
 
-在大模型应用的持续迭代中，为了验证迭代效果，往往会构建一个标准的自动化测试数据集。基于标准的数据集与大模型自动化评估手段，可以快速直观看到优化后的效果差异。
+在大模型应用的持续迭代中，为了验证迭代效果，往往会构建一个标准的自动化测试数据集 (Dataset)。基于标准的数据集与大模型自动化评估手段，可以快速直观看到优化后的效果差异。锦上添花的地方在于，Langfuse 也支持根据线上跟踪的情况动态增减数据集，比如可以将之前表现不佳的用户问题动态加入数据集，进行后续的优化：
+
+![dataset](/img/in-post/langfuse/dataset-example-workflow.webp)
+
+#### 数据集的构建
+
+Langfuse 提供了 sdk 帮助快速构建数据集，构建数据集主要包含创建数据集，添加测试项。
+
+创建测试集如下所示：
+
+```python
+langfuse.create_dataset(
+    name="<dataset_name>",
+    description="My first dataset",
+    metadata={
+        "author": "Alice",
+        "date": "2022-01-01",
+        "type": "benchmark"
+    }
+)
+```
+
+向测试集中添加测试项如下所示：
+
+```python
+langfuse.create_dataset_item(
+    dataset_name="<dataset_name>",
+    input={
+        "text": "hello world"
+    },
+    expected_output={
+        "text": "hello world"
+    },
+    metadata={
+        "model": "llama3",
+    }
+)
+```
+
+常见完成后就可以在 Langfuse 网页端查看。
+
+#### 自动化评估
+
+
+
+
+
+
+## 总结
 
