@@ -101,12 +101,89 @@ langfuse.create_dataset_item(
 
 常见完成后就可以在 Langfuse 网页端查看。
 
+#### Dify 任务提交
+
+为了进行批量自动化测试，需要获取数据集中所有的测试项，依次提交给 Dify 服务，并将 Dify 返回的消息 id 与 Langfuse 中的 trace id 进行关联，类似如下所示：
+
+```python
+# 调用 dify 接口发送消息，获取 dify 响应
+
+async def send_chat_message(
+    query: str,
+    inputs: dict = {},
+    url: str = os.getenv("DIFY_API_BASE", ""),
+    api_key: str = os.getenv("DIFY_API_KEY", ""),
+    response_mode: Literal["streaming", "blocking"] = "blocking",
+    user: str = "auto_test",
+    file_array: list = [],
+):
+    chat_url = f"{url}/chat-messages"
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "inputs": inputs,
+        "query": query,
+        "response_mode": response_mode,
+        "conversation_id": "",
+        "user": user,
+        "files": file_array,
+    }
+    async with aiohttp.ClientSession() as session:
+        async with session.post(chat_url, headers=headers, json=payload) as response:
+            ret = await response.json()
+            status = ret.get("status")
+            message = ret.get("message")
+            if status and message:
+                raise ValueError(f"{status}: {message}")
+            return ret
+
+async def run_dataset_item(item, run_name):
+    response = await send_chat_message(item.input)
+
+    # 将 dify 返回的 message_id 与 langfuse 中的 trace id 进行关联
+
+    item.link(
+        trace_or_observation=None,
+        run_name=run_name,
+        trace_id=response["message_id"],
+        observation_id=None,
+    )
+    return response
+```
+
+如果在 Dify 中绑定了 Langfuse 服务，那么 Dify 处理消息时，就会将完整的调用链路发送给 Langfuse。如果通过 `item.link()` 执行了数据集的绑定，那么实际就能看到批量测试结果，而且点击 trace 列可以跟踪单次跳转的详情。类似如下所示：
+
+![trace](/img/in-post/langfuse/trace.png)
+
 #### 自动化评估
 
+常规的自动化评估可以自由选择，只需要计算评估得分后调用 Langfuse 中的 `score()` 方法，将得分传入 Langfuse 即可。常规 RAG 的评估框架之前的文章中 [从开发到部署，搭建离线私有大模型知识库](https://zhuanlan.zhihu.com/p/689947142), 可以选择 ragas, trulens 等。
 
+类似的评估上传如下所示：
 
+```python
+langfuse_generation = langfuse.generation(
+    name="guess-countries",
+    input=messages,
+    output=openai_completion,
+    model="gpt-3.5-turbo",
+    start_time=generationStartTime,
+    end_time=datetime.now()
+)
 
+# 自定义评估方法 evaluate_func，计算所需的评估得分
 
+langfuse_generation.score(
+    name="exact_match",
+    value=evaluate_func(completion, item.expected_output)
+)
+```
+
+个人选择 ragas 作为评估方法，评估完成后可以测试列表如下所示：
+
+![after_test](/img/in-post/langfuse/after_test.png)
 
 ## 总结
 
+本文是对 Dify + Langfuse 的初步实践，从个人使用体验来看，由于 Dify 官方提供了完整的支持，因此 Langfuse 的接入变得相对简单，可以快速跟踪现有大模型应用的执行链路。
+
+但是目前 Langfuse 还处于快速迭代中，数据集的构建以及自动化测评的集成还不是很完善，需要自己做必要的代码开发，才能真正满足自动化测试需求。但是整体而言，在 Dify 应用中，Langfuse 还是一个不错的选择，推进大家尝试一下。
