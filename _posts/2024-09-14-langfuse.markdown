@@ -14,31 +14,31 @@ tags:
 ---
 
 ## 背景介绍
-众所周知，大模型应用的输出存在着一些不确定性，往往需要迭代多轮才能得到较为稳定的输出结果，因此开发者往往需要关注大模型应用的输出结果，并进行有针对性的优化。
+众所周知，大模型应用的输出存在着一些不确定性，往往需要迭代多轮才能得到较为稳定的输出结果，因此开发者往往需要关注大模型应用的实际表现，并进行有针对性的优化。
 
-然而常规 Web 服务的监控机制往往无法满足大模型应用的监控需求，因为大模型应用往往关注的不仅仅是响应延迟、吞吐量等指标，而是需要关注大模型应用输出的语义表现。因此，本文将介绍如何借助 Dify 和 Langfuse 工具，展示如何进行大模型应用的监控和优化。
+然而常规 Web 服务的监控机制往往无法满足大模型应用的监控需求，因为大模型应用往往关注的不仅仅是响应延迟、吞吐量等基础指标，而是需要关注大模型应用输出的语义正确性。因此，本文将介绍如何借助 Dify 和 Langfuse 工具，展示如何为大模型应用必要监控，方便进行有定向优化。
 
 ## 基础介绍
 
 #### Dify
-[Dify](https://github.com/langgenius/dify) 是一款热门的开源 LLMOps 服务，作为一个大模型应用的基础设施，可以帮助开发者快速构建 LLM 应用。关于 Dify 的介绍之前整理过很多，比如 [大模型应用基础服务 Dify 深度解读](https://zhuanlan.zhihu.com/p/706381113), 感兴趣的可以去了解下。
+[Dify](https://github.com/langgenius/dify) 是一款热门的开源 LLMOps 服务，作为一个大模型应用的基础设施，可以帮助开发者快速构建 LLM 应用。关于 Dify 的介绍之前整理过很多，比如 [大模型应用基础服务 Dify 深度解读](https://zhuanlan.zhihu.com/p/706381113), 感兴趣的可以去了解下，这边就不再深入展开了。
 
 #### Langfuse
 
-[Langfuse](https://github.com/langfuse/langfuse) 是一款开源的大模型应用监控服务，可以为大模型应用提供监控能力。比如在 Dify 复杂的任务流中，可以借助 Langfuse 跟踪各个环节输出的结果，方便深入定位问题。
+[Langfuse](https://github.com/langfuse/langfuse) 是一款开源的大模型应用监控服务，可以为大模型应用提供监控能力。比如面对 Dify 复杂的任务流，可以借助 Langfuse 跟踪各个基础环节输出的结果，方便深入定位问题。
 
-除了常规的内容监控外，Langfuse 还有两个值得重点关注的能力：
+除了常规的内容搜集与展示外，Langfuse 还有两个值得重点关注的能力：
 
 1. LLM 评估，可以借助大模型评估现有业务输出的内容，充当 [LLM-as-a-Judge](https://arxiv.org/abs/2306.05685) 角色。考虑到大模型应用输出的都是大量的文本内容，常规的评估方式往往无法满足需求，因此借助 LLM 评估可以更精准快速地评估输出内容（这个功能目前 Langfuse 还处于实验阶段，私有化部署暂时还不支持，预计后续会很快上线）；
-2. 数据集管理，数据集管理可以帮助我们通过批量标准手段快速测试大模型应用，在进行大模型应用优化时，可以借助数据集管理快速测试优化后的效果，避免负优化；
+2. 数据集管理，数据集管理可以帮助我们通过批量标准手段快速测试大模型应用，在进行大模型应用优化时，可以借助数据集快速测试优化后的效果，避免负优化；
 
-Dify 官方目前直接支持的监控方案为 LangSmith 和 Langfuse。 LangSmith 功能更强，但是是需要付费的，而且没有提供私有化部署的能力，因此 Langfuse 算是一个开源的替代方案。
+Dify 官方目前直接支持的监控方案为 LangSmith 和 Langfuse。 LangSmith 功能更强，但是需要付费，而且没有提供私有化部署的能力，因此 Langfuse 算是一个开源的经济方案。
 
 ## 部署与集成
 
 #### 服务部署
 
-Dify 和 Langfuse 都提供了不同的部署方案，常规情况下，如果希望进行私有化部署，基于 docker compose 的方案是最省心的。
+Dify 和 Langfuse 都提供了多种部署方案，常规情况下，如果希望进行私有化部署，基于 docker compose 的方案是最省心的。
 
 Dify 的部署流程可以参考 [Dify Docker Compose 部署](https://docs.dify.ai/v/zh-hans/getting-started/install-self-hosted/docker-compose)
 
@@ -56,11 +56,11 @@ Dify 官方提供了对 Langfuse 的支持，因此可以在 Dify 应用中通�
 
 ![usage](/img/in-post/langfuse/usage.png)
 
-以 RAG 应用为例，可以跟踪最终输出，同时右侧也可以看到中间知识检索的结果，方便深入定位各个环节中的问题。
+上图是一个 RAG 应用，可以看到 Langfuse 除了可以跟踪最终输出，右侧也可以看到中间知识检索的结果，方便深入定位各个环节中的问题。
 
 ## 数据集与自动化评估
 
-在大模型应用的持续迭代中，为了验证迭代效果，往往会构建一个标准的自动化测试数据集 (Dataset)。基于标准的数据集与大模型自动化评估手段，可以快速直观看到优化后的效果差异。锦上添花的地方在于，Langfuse 也支持根据线上跟踪的情况动态增减数据集，比如可以将之前表现不佳的用户问题动态加入数据集，进行后续的优化：
+在大模型应用的持续迭代中，为了验证迭代效果，往往会构建一个标准的自动化测试数据集 (Dataset)。基于标准的数据集与大模型自动化评估手段，可以快速直观看到优化后的效果差异。除此之外，Langfuse 也支持根据线上跟踪的情况动态新增数据集，比如可以将之前表现不佳的用户问题动态加入数据集，方便进行有针对性的优化：
 
 ![dataset](/img/in-post/langfuse/dataset-example-workflow.webp)
 
@@ -68,7 +68,7 @@ Dify 官方提供了对 Langfuse 的支持，因此可以在 Dify 应用中通�
 
 Langfuse 提供了 sdk 帮助快速构建数据集，构建数据集主要包含创建数据集，添加测试项。
 
-创建测试集如下所示：
+创建测试集可以直接调用 `create_dataset` 方法：
 
 ```python
 langfuse.create_dataset(
@@ -82,7 +82,7 @@ langfuse.create_dataset(
 )
 ```
 
-向测试集中添加测试项如下所示：
+向测试集中添加测试项可以调用 `create_dataset_item()` 方法：
 
 ```python
 langfuse.create_dataset_item(
@@ -99,11 +99,11 @@ langfuse.create_dataset_item(
 )
 ```
 
-常见完成后就可以在 Langfuse 网页端查看。
+创建完成后就可以在 Langfuse 网页端实时查看了。
 
 #### Dify 任务提交
 
-为了进行批量自动化测试，需要获取数据集中所有的测试项，依次提交给 Dify 服务，并将 Dify 返回的消息 id 与 Langfuse 中的 trace id 进行关联，类似如下所示：
+为了进行批量自动化测试，需要获取数据集中所有的测试项，依次提交给 Dify 服务，并将本次任务与测试项进行绑定：
 
 ```python
 # 调用 dify 接口发送消息，获取 dify 响应
@@ -154,11 +154,13 @@ async def run_dataset_item(item, run_name):
 
 ![trace](/img/in-post/langfuse/trace.png)
 
+实际测试发现，Dify 的监控消息是异步发送给 Langfuse, 因此如果异步任务堆积，可能会导致 Langfuse 推送延迟。
+
 #### 自动化评估
 
-常规的自动化评估可以自由选择，只需要计算评估得分后调用 Langfuse 中的 `score()` 方法，将得分传入 Langfuse 即可。常规 RAG 的评估框架之前的文章中 [从开发到部署，搭建离线私有大模型知识库](https://zhuanlan.zhihu.com/p/689947142), 可以选择 ragas, trulens 等。
+后续官方的私有化部署自动化评估发布之后，应该只需要配置大模型即可进行自动评估了。而目前阶段可以基于第三方框架进行评估，之后再上传至 Langfuse 中。常规 RAG 的评估框架之前的文章中 [从开发到部署，搭建离线私有大模型知识库](https://zhuanlan.zhihu.com/p/689947142), 可以选择 ragas, trulens 等。
 
-类似的评估上传如下所示：
+计算评估得分后调用 Langfuse 中的 `score()` 方法，将得分传入 Langfuse：
 
 ```python
 langfuse_generation = langfuse.generation(
@@ -178,12 +180,13 @@ langfuse_generation.score(
 )
 ```
 
-个人选择 ragas 作为评估方法，评估完成后可以测试列表如下所示：
+个人实际选择 ragas 作为评估方法，评估完成后可以在网页端直接查看：
 
 ![after_test](/img/in-post/langfuse/after_test.png)
 
+
 ## 总结
 
-本文是对 Dify + Langfuse 的初步实践，从个人使用体验来看，由于 Dify 官方提供了完整的支持，因此 Langfuse 的接入变得相对简单，可以快速跟踪现有大模型应用的执行链路。
+本文是对 Dify + Langfuse 的初步实践，从个人使用体验来看，由于 Dify 官方提供了完整的支持，Langfuse 的接入变得相对简单，可以快速跟踪现有大模型应用的执行链路。
 
-但是目前 Langfuse 还处于快速迭代中，数据集的构建以及自动化测评的集成还不是很完善，需要自己做必要的代码开发，才能真正满足自动化测试需求。但是整体而言，在 Dify 应用中，Langfuse 还是一个不错的选择，推进大家尝试一下。
+但是目前 Langfuse 还处于快速迭代中，自动化测评的集成还不是很完善，需要自己做必要的代码开发，才能真正满足全自动化测试的需求。但是整体而言，在 Dify 应用中，Langfuse 还是一个不错的选择，推荐大家尝试一下。
