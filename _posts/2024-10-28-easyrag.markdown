@@ -1,0 +1,96 @@
+---
+layout: post
+title: "AIOps RAG 比赛获奖项目 EasyRAG 深入解读"
+subtitle:   "In-depth interpretation of AIOps RAG competition winning project EasyRAG"
+date:       2024-10-28 09:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - RAG
+    - agent
+    - llm
+---
+
+## 背景介绍
+最近参加 CCF 的 RAG 比赛，系统性对 RAG 检索中多种多样的检索优化方案进行了测试和对比，也发现了不少之前没有注意到的优化细节。从实践来看，比赛确实是一个不错的批量测试的绝佳场所，很公平地对不同的优化方案进行了客观比较。实践中不时会感觉会很有效的策略不生效，有些看起来平平无奇的策略反而效果绝佳。根据结果反过来分析策略，更容易理解不同策略背后的适用场景和优劣，也可以帮助认识自己技能的盲区。
+
+在最近几天看到 AIOps RAG 比赛的获奖方案 [EasyRAG](https://arxiv.org/pdf/2410.10315), 在初赛获得 top1, 复赛获得 top2，相关的实现也开源在 [Github](https://github.com/BUAADreamer/EasyRAG/tree/master?tab=readme-ov-file), 抽空研究了相关的论文与实现，整理相关内容在这边。
+
+## 整体方案
+
+整体方案如下所示：
+
+![EasyRAG](/img/in-post/easyrag/overview.png)
+
+从图中可以看到，整体的方案主要包含分为两部分：
+
+1. 索引构建阶段（Ingestion）: 整体流程与常规方案基本一致，额外有两个不同之处：一是包含了文档元信息的使用，二是对图片进行了 OCR 提取并过滤之后，使用多模态大模型  GLM-4V-9B 生成了对应的描述信息入库；
+2. 检索阶段（EasyRAG）: 使用的是检索 + 重排序的方案，重排序使用 [bge-reranker-v2-minicpm-layerwise](https://huggingface.co/BAAI/bge-reranker-v2-minicpm-layerwise) 模型。与常规 RAG 方案相比，有一个明显不同在于使用 LLM 先生成了答案，之后使用检索的 Top1 文档对结果进行了额外的优化；
+
+整体的框架基于 [llama-index](https://docs.llamaindex.ai/en/v0.10.17/index.html#) 实现。从目前来看，llama-index 是一个比较优秀的 RAG 基础框架，可以帮助快速搭建 RAG 服务，感兴趣的同学可以深入了解下。
+
+下面主要对 EasyRAG 中的部分技术细节进行介绍，感兴趣的还是推荐查看 [原始论文](https://arxiv.org/pdf/2410.1031)
+
+## 索引构建
+
+#### 文件切片与构建
+
+本项目使用的是 SentenceSplitter 进行文档切分，首先使用中文标点符号切分成句子，然后根据设置的文本块大小进行合并。使用的块大小（chunk-size）为1024，块重叠大小（chunk-overlap）为 200。为什么会选择这个长度，答案是试出来的，不同的数据集可能适合不同的方案，大家可以根据自己的数据集进行尝试。
+
+在构建的分片中，EasyRAG 会将原信息加入分片中，提升检索的召回率，目前使用的元信息为知识库路径，文件路径等信息。在实践中发现加入元信息后 llama-index 计算块大小和重叠大小存在一定的问题，因此手工实现了 SentenceSplitter 修复了相关问题，具体的实现可以查看 [Easyrag splitter](https://github.com/BUAADreamer/EasyRAG/blob/master/src/easyrag/custom/splitter.py)。
+
+## 检索阶段
+
+#### 查询 Rewrite
+
+对原始的查询进行重写是一个常规做法，解决的主要是原始查询难以检索的问题。主要尝试了下面两种方案：
+1. 考虑到查询中关键词比较重要，使用 LLM 提取问题中的关键词，之后进行关键词的扩展，然后使用 LLM 重写原始查询，实际效果反而准确性下降，具体对比如下所示：
+
+    ![rewrite](/img/in-post/easyrag/rewrite.png)
+
+2. 设计了一个优化版本的 HyDE, 这个从描述来看还是比较有意思的。具体流程如下所示：
+
+    ![hyde_loop](/img/in-post/easyrag/hyde_loop.png)
+
+    HyDE 希望解决的问题与文档中的答案相似性较低的问题，但是常规问题使用 HyDE 生成时很容易生成大量不相关的冗余信息，从而会导致检索效果很差。因此在上面的流程中，HyDE 的文档与检索获得的 Top1 的文档结合起来，生成更符合实际知识库的假设文档，从直觉上应该可以缓解原始 HyDE 的问题。实际测试依旧效果不佳：
+
+    ![hyde](/img/in-post/easyrag/hyde.png)
+
+    而且将 HyDE 生成的文档用于检索和重排序效果都不如直接使用原始问题。感觉这个方案有点类似 RAG + R 的方案，特定场景下相对原始的 HyDE 可能会有一些提升，后续可以进行一些尝试。
+
+#### 文档检索
+
+文档检索使用的是双路的 BM25 检索 + 向量检索的方案。其中双路 BM25 检索包含文档块检索和路径检索。
+
+对于 BM25 的检索，有一些值得注意的细节：
+
+1. **BM25 检索前过滤掉了常见中文停用词，通过过滤掉不相关的单词和特殊符号，提高有效关键词的命中率，从而提高正确文档的召回率**；
+2. **将文档路径与文本块进行拼接，作为扩展文档进行检索。利用元信息提升文档的可检索性**；
+3. **使用文档路径比较元信息，过滤不相关的文档块。一个典型的利用元信息进行过滤的优化**；
+
+对于向量检索，有一些值得注意的细节：
+
+1. **向量化使用的是 [gte-Qwen2-7B-instruct](https://huggingface.co/Alibaba-NLP/gte-Qwen2-7B-instruct), 这是基于大模型微调生成的向量化模型，在各个榜单上表现都不错**；
+2. **将文档路径与文本块进行拼接，并使用文档路径进行过滤。同样利用元信息提升检索准确性**；
+3. **召回文档数量为 288 个，通过过度召回保证信息的完整性，后续可以利用重排序模型保证信息的准确性，牺牲时间换取准确性**；
+
+#### 重排序
+
+实际测试了多种重排序模型，最终发现基于 LLM 构建的模型 bge-reranker-v2-minicpm-layerwise 效果最好，这个和我们实际测试的发现是相符的。实际测试的结果如下所示：
+
+![rerank](/img/in-post/easyrag/rerank.png)
+
+可以关注 re-ranking 列，其中使用的模型编号如下所示：
+- 0 表示的是 bge-reranker-v2-m3
+- 1 表示的是 bce-reranker-base_v1
+- 2 表示的是 40 层的 bge-reranker-v2-minicpm-layerwise
+- 3 表示的是 28 层的 bge-reranker-v2-minicpm-layerwise。
+
+从实际的数据来看：
+
+**28 层 bge-reranker-v2-minicpm-layerwise > 40 层 bge-reranker-v2-minicpm-layerwise > bge-reranker-v2-m3 > bce-reranker-base_v1**，这个结果和我们在其他数据集上的测试结果是相符的。
+
+
+
+
