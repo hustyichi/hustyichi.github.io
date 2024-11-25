@@ -104,13 +104,43 @@ tags:
 
 #### 重排序（Passage Rerank）
 
+从之前的 [QAnything](https://zhuanlan.zhihu.com/p/697031773) 的调研就发现，Rerank 对 RAG 检索准确性的提升十分明显，在实践中也很容易感受到在这种差异，因此在最近的 RAG 方案中 Rerank 基本成为标配方案了。
+
+当前的问题就是如何选择 Rerank 模型，在论文中进行了不同类型的 Rerank 模型的比较，具体的结果如下所示：
+
+![rerank](/img/in-post/rag-best/rerank.png)
+
+论文从平衡性能和效果的角度推荐使用 monoT5，从我实践的情况来看，[bge-reranker-v2-m3](https://huggingface.co/BAAI/bge-reranker-v2-m3) 是一个在生产环境相对不错的选择，如果追求更好的效果，我实际建议的方案与之前 [AIOps RAG 比赛](https://zhuanlan.zhihu.com/p/3758214821) 中的建议一致，建议使用使用基于 LLM 的 Rerank 模型 [bge-reranker-v2-minicpm-layerwise](https://huggingface.co/BAAI/bge-reranker-v2-minicpm-layerwise)。
+
 
 #### 检索过滤（Passage Filter）
+
+检索结果的过滤主要用于去除无关的文档，目前实践中主要采用两种方案：
+
+- 基于相似度阈值过滤，低于相似度阈值的文档被认定为不相关直接过滤掉；
+- 基于文本长度限制过滤，因为最终大模型可以支持的输入上下文是有限，因此只能选择 topN 的相似文档；
+
+从个人实践来看，我一般会选择结合两者，基于较小的相似度阈值过滤掉完全无关的文档，再基于 topN 避免上下文过长。这样保证完全不相关的文档会被过滤掉，同时也能避免存在较多相关文档时上下文过长。
 
 
 #### 检索压缩（Passage Compressor）
 
+检索压缩主要用于对检索匹配的上下文进行压缩，去除与问题无关的上下文，这样可以有效提升上下文信息密度，降低无关信息的干扰，同时提升大模型推理速度和质量。在论文中主要比较了 [Recomp](https://github.com/carriex/recomp) ， [LongLLMLingua](https://github.com/microsoft/LLMLingua) 和 Selective Context 三种方案，具体的结果如下所示：
+
+![compress](/img/in-post/rag-best/compress.png)
+
+在论文中的结果来看，Recomp 的效果相对更好，在 [AIOps RAG 比赛](https://zhuanlan.zhihu.com/p/3758214821) 中实现了一个基于 BM25 的检索压缩方案，我在实践中进行了测试，效果不是特别理想。最终参考 AIOps RAG 比赛中的方案，将 BM25 评分替换为 Rerank 评分，可以取得了更好的效果，当然成本也会更高。
+
 
 #### 结果生成（Generator）
 
+在最终使用大模型生成答案时，如何组织检索的多个文档对结果也存在一些影响，一般会按照相似度进行正序或逆序排列，但是考虑到 `Lost in middle` 效应，存在另一种方案，将检索的相关性高的文档排在两边，相关性低的文档排在中间。论文中对这三种方案进行了比较，具体的结果如下所示：
 
+![repack](/img/in-post/rag-best/repack.png)
+
+从论文的结果来看，对效果的影响相对有限，我猜测可能是因为检索实际匹配的文档数量有限，`Lost in middle` 效应的影响没那么明显。从目前来看，如果实现简单，可以考虑排列在两侧的方案。
+
+
+## 总结
+
+本文是基于复旦大学的论文，AutoRAG 以及个人的实践经验模块化梳理了当前 RAG 的最佳实践方案，按照这个模块化的方案可以相对低成本的组装出一个相对不错的 RAG 方案，虽然实际中可能依旧需要根据具体场景进行特定调整，但是已经是一个相对良好的基础方案了，而且模块化方案后续的迭代升级也相对方便。
