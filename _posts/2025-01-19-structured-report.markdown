@@ -12,7 +12,11 @@ tags:
 ---
 
 ## 背景介绍
-2025 年是大模型迅速落地的一年，Agent 的发展是其中重要的一环。最近看到了来自 NVIDIA 的结构化报告生成方案，刚好在 2024 年底被大量 RAG 总结的论文列表轰炸了一番，密集阅读大量论文时，真切感受到深入了解一个领域论文对精力的消耗是巨大的。因此深入研究了 NVIDIA 的方案，希望后续在此基础上进行二次改良，实现自己的论文阅读助手，真正减少阅读论文的时间。
+最近被 2024 年底的大量 RAG 总结的论文列表轰炸了一番，密集阅读大量论文时，真切感受到深入了解一个领域论文对精力的消耗是巨大的。
+
+刚好注意到来自 NVIDIA 的结构化报告生成方案，如果真的可行，是否可以使用大模型一次性阅读大量的论文，并生成脉络清晰的报告，基于报告选择合适的论文进行阅读，是否可以大大减少阅读论文的时间。
+
+因此深入研究了 NVIDIA 的方案，希望后续在此基础上进行二次改良，实现自己的论文阅读助手，真正减少探索单个领域论文消耗的大量精力。
 
 
 ## 整体方案
@@ -32,7 +36,7 @@ tags:
 
 ## 规划阶段
 
-规划阶段主要目的是生成整体的报告的骨架，确定报告的结构。理论上直接基于大模型就可以直接生成，但是考虑到科研环节调研往往需要具备前沿性，而大模型的信息往往往往具备滞后性，因此需要使用 Travily 额外获取信息，作为补充信息提供给大模型。
+规划阶段主要目的是生成整体的报告骨架，确定报告的结构。理论上直接基于大模型就可以直接生成，但是考虑到科研环节调研往往需要具备前沿性，而大模型的信息更新往往比较滞后，因此使用 Travily 获取额外信息，作为补充信息提供给大模型，类似 RAG 的做法。
 
 #### 信息检索
 
@@ -59,9 +63,9 @@ report_planner_query_writer_instructions = """You are an expert technical writer
     """
 ```
 
-扩充后需要调用大模型生成多个查询，因此大模型需要具备结构化输出的能力，方便进行多个查询的提取。之后直接调用 tavily 客户端获取所需的信息。
+扩充后调用大模型生成多个查询，因此大模型需要具备结构化输出的能力，方便进行多个查询的提取。之后直接调用 tavily 客户端获取所需的信息。
 
-在检索到所需的信息后，需要基于检索的 URL 地址进行去重，并将检索到的内容组织为格式化字符串，方便大模型可以正常理解并进行正确的文章结构的生成。
+在检索到所需的信息后，需要基于检索的 URL 地址进行去重，并将检索到的内容组织为格式化内容，方便大模型正常理解并生成正确的文章结构。
 
 #### 报告骨架生成
 
@@ -93,7 +97,7 @@ report_planner_instructions = """You are an expert technical writer, helping to 
     Consider which sections require web research. For example, introduction and conclusion will not require research because they will distill information from other parts of the report."""
 ```
 
-最终生成的报告结构包含多个 Section, 每个 Section 包含如下所示的信息：
+最终生成的报告结构拆分为多个 Section, 每个 Section后续可以独立调研和生成最终的内容。每个 Section 包含如下所示的信息：
 
 1. Name: 报告的名称
 2. Description: 报告的描述
@@ -111,7 +115,7 @@ report_planner_instructions = """You are an expert technical writer, helping to 
 
 进行各个 Section 的内容填充，和规划阶段类型，内容主要基于大模型生成，但是考虑到大模型的滞后性问题，因此需要使用 tavily 进行信息补充。因此流程就包含了信息检索与内容填充两部分。
 
-与规划阶段类似，同样需要进行查询的扩充，使用的 prompt 如下所示：
+与规划阶段类似，首先进行查询的扩充，使用的 prompt 如下所示：
 
 ```python
 query_writer_instructions = """Your goal is to generate targeted web search queries that will gather comprehensive information for writing a technical report section.
@@ -190,7 +194,7 @@ section_writer_instructions = """You are an expert technical writer crafting one
 
 #### Section 内容组织与优化
 
-对于单个 Section 生成的内容，会执行格式化转换，并使用大模型进行内容的组织与优化，实际就是就是基于单次大模型调用实现，使用的 prompt 如下所示：
+对于单个 Section 生成的内容，会执行格式化转换，并使用大模型进行内容的组织与优化，实际是基于单次大模型调用实现，使用的 prompt 如下所示：
 
 ```python
 final_section_writer_instructions = """You are an expert technical writer crafting a section that synthesizes information from the rest of the report.
@@ -242,10 +246,10 @@ final_section_writer_instructions = """You are an expert technical writer crafti
 
 #### 报告汇总
 
-将各个 Section 的内容进行汇总，生成最终的报告。这部分就是简单字符串拼接，没有太多额外的操作。
+将各个 Section 的内容进行汇总，生成最终的报告。这部分就是简单字符串拼接，没有额外的操作。
 
 
 ## 总结
-本文整体介绍了 Nvidia 的结构化报告生成方案，整体方案比较简单，比较值得关注的是整体的 Agent 流程与相关的 prompt 设计。此方案给出了一个相对简洁而且完整的结构化报告生成方案，大家都可以在此基础上进行二次改造，实现自己的论文调研助手。
+本文整体介绍了 Nvidia 的结构化报告生成方案，整体方案比较简单，比较值得关注的是整体的 Agent 流程与相关的 prompt 设计。此方案给出了一个相对简洁而且完整的结构化报告生成方案，适合作为一个基础版本进行二次改造，实现个人的论文调研助手。
 
 从目前来看，在 langchain graph 的支持下，Agent 应用的流程构造变得相对简单。只要能清晰梳理出核心业务环节，就可以将原始业务需求拆分为不同的节点，并借助 langchain graph 即可将节点的执行逻辑串联起来，实现完整的 Agent 流程。借助现有开源框架，确定能大大降低 Agent 应用的开发成本。
