@@ -76,7 +76,9 @@ API 扩展的实现较为简单，只需遵循 [官方文档](https://docs.dify.
 **实现步骤**
 
 1. **初始化目录**
+
    在 Dify 项目的 `api/core/moderation` 下创建目录和文件：
+
    ```
    api/core/moderation
                 ├── custom
@@ -85,7 +87,9 @@ API 扩展的实现较为简单，只需遵循 [官方文档](https://docs.dify.
    ```
 
 2. **添加前端组件定义文件**
+
    在 `schema.json` 中定义前端配置项，例如：
+
    ```json
    {
        "label": {
@@ -135,6 +139,7 @@ API 扩展的实现较为简单，只需遵循 [官方文档](https://docs.dify.
    ```
 
 3. **添加实现类**
+
    实现类继承自内置 `Moderation` 类，重写 `moderation_for_inputs` 和 `moderation_for_outputs` 方法。关键词审核可参考官方已有的组件快速实现；大模型审核可通过 `ModelManager` 调用用户配置的默认大模型，这样可以更好的地适配 Dify 框架，避免用户需要额外配置安全围栏的大模型。
 
    ```python
