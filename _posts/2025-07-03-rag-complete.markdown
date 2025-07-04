@@ -122,12 +122,15 @@ results = await AsyncOpenaiProcessor().process_structured_ouputs_requests(
 ## 知识库问答
 
 #### 检索
-
+在项目的检索方案中，项目探索了向量检索与 BM25 的混合检索方案。但是按照他的最简化实现，效果表现不佳，最终放弃了这个优化方向。一般而言，混合检索可以相对有效提升向量检索的召回率，建议大家在自己的实际项目中还是建议尝试。
 
 #### 检索增强（Passage augmenter）
+在检索增强的策略的选择中，实际应用的是 [RAG 最佳实践](https://zhuanlan.zhihu.com/p/8861103446) 中重点介绍的父子检索策略。从目前而言，父子检索因为实现成本低，而且可以有效的缓解单个分片信息不完整的问题，确实是一个不错的增强策略。
 
+前不久在 LLamaIndex 的 [Building Performant RAG Applications for Production](https://docs.llamaindex.ai/en/stable/optimizing/production_rag/) 的文章中提到了一个很有价值的洞见：解耦用于检索分片与提供给大模型作为上下文的分片。相对有道理，父子检索就是实现此想法众多方案的一个实现。
 
 #### 重排序（Passage Rerank）
+重排序一般是基于重排序模型的来实现的，但是目前因为大模型在更大范围的语料的上进行过训练，一般情况下能力会更强，因此目前重排序模型
 
 
 #### 检索过滤（Passage Filter）
