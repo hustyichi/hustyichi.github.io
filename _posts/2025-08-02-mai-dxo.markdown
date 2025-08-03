@@ -1,0 +1,94 @@
+---
+layout: post
+title: "从医学视角深度解析微软医学 Agent 服务 MAI-DxO"
+subtitle:   "In-depth analysis of Microsoft Medical Agent service MAI-DxO from a medical perspective"
+date:       2025-08-02 19:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - llm
+    - agent
+---
+
+## 背景介绍
+
+作为一个医学大模型应用从业者，个人会持续跟进行业最新进展。最近医学大模型领域，微软的一篇论文 [Sequential Diagnosis with Language Models](https://arxiv.org/pdf/2506.22405) 热度很高。微软在论文中构建了一个 Agent 应用 MAI-DxO，在复杂病例的诊断上大幅领先全科医生，诊断准确性达到 85.5% ，而人类全科医生诊断准确性仅为 20% 左右。从这个结果来看，简直就是全方位的碾压。下面的图中红色点位就是人类医生的平均水平。
+
+![versus](/img/in-post/mai-dxo/versus.png)
+
+但是实际的真实情况如何，本文会结合论文以及具体的代码实现，从医学视角来看 MAI-DxO 的具体方案。
+
+## 基准测试
+
+在开始具体的方案介绍之前，先得了解下论文中的测试方案，这也是此论文中一个独特的亮点。在之前的医学大模型应用评测中，往往会将复杂的病例进行精心打包，病例中一般包含主诉、现病史、关键检查结果，然后要求模型从预先定义的诊断结果列表中选出正确的诊断结果。这种测试虽然可以验证大模型的医学推理能力，但是与真实的医学临床问诊存在很大差异。
+
+本次的微软的论文中引入了一种更接近真实临床的测试方案，即 SDBench 。这是一个通过真实的序贯临床诊疗评估诊断代理（人类或人工智能）的交互式框架。SDBench 将 304 例《新英格兰医学杂志》(NEJM) 临床病理学会议 (CPC) 病例重新构建为分步诊断，其中诊断 Agent 决定要提出哪些问题、安排哪些检查以及自主确定何时做出最终诊断。形式如下所示：
+
+![sdbench](/img/in-post/mai-dxo/sdbench.png)
+
+在实际的测试中，构建了一个 GateKeeper Agent，此 Agent 用于根据真实的病例数据对诊断 Agent 提出的问题做出响应。比如诊断 Agent 提出需要做血常规检查，GateKeeper Agent 会返回真实病例中的血常规检查的结果，这样可以不需要人工介入进行完整的自动化评估。
+
+在单个病例的测试中，诊断 Agent 首先会接收到一段简单的病例主诉信息，之后诊断 Agent 需要做出判断，下一步进行哪些检查，并根据检查的结果进行下一轮的动作，可以要求继续进行检查或认定信息充分给出最终诊断。
+
+## 方案介绍
+
+下面对 MAI-DxO 的具体解决方案进行介绍。整体方案直接使用现有模型，通过多 Agent 框架的编排，实现一个完整的诊断服务。
+
+#### 方案概述
+
+在论文中对具体诊疗方案介绍比较简单，基本都体现在这个架构图中：
+
+![arch](/img/in-post/mai-dxo/arch.png)
+
+主要由五种不同类型的医学角色构建为一个虚拟小组，五种角色配合完成整个诊疗过程，整个角色定义一定程度模拟实际的真实诊疗过程，减轻个体认知偏差并最大限度地降低医疗成本。具体的角色如下所示：
+
+- `Dr Hypothesis Agent`：维护基于概率排序的鉴别诊断，列出最有可能的三种情况，并在每次发现新情况后以贝叶斯方式更新概率。
+- `Dr Test Chooser Agent`：每轮最多选择三个诊断检查，最大限度地区分不同的鉴别诊断；
+- `Dr Challenger Agent`：充当质疑者，识别潜在的锚定偏差，强调相互矛盾的证据，并提出可能推翻当前主诊断的检查；
+- `Dr Stewardship Agent`：在诊断结果相同的情况下，提出更便宜的替代方案，并否决低收益的昂贵测试，从而强制推行注重成本的检查。
+- `Dr Checklist Agent`：执行静默质量控制，以确保模型生成有效的检查名称并在整个小组的推理中保持内部一致性。
+
+在现有的医学小组给出相应的处理后，最后会经历一轮综合性的辩论（论文中称为 `Chain of Debate`）达成最终的共识，确定下一步的动作，可以选择提出问题（模拟询问患者沟通），安排检查（模拟医生开检查单）或做出诊断（如果确定性超过阈值）。
+
+#### 具体实现
+
+目前官方还没有将完整的代码开源出来，但是目前开源社区存在一个基于 Swarm 的开源实现 [Open-MAI-Dx-Orchestrator](https://github.com/The-Swarm-Corporation/Open-MAI-Dx-Orchestrator)，可以参考此项目大致了解 MAI-DxO 的实现。
+
+**整体流程**
+从现有代码实现中，可以看到就是多轮的 Agent 协作，在每轮中，首先由小组讨论确定下一步行动，然后与 Gatekeeper Agent 进行交互，获取必要信息，直到最终得出最终诊断
+
+
+```python
+def run(self, initial_case_info: str, full_case_details: str, ground_truth_diagnosis: str):
+    final_diagnosis = None
+
+    for i in range(self.max_iterations):
+        # 小组讨论确定下一步行动
+
+        action = self._run_panel_deliberation(case_state)
+
+        if action.action_type == "diagnose":
+            final_diagnosis = action.content
+            break
+
+        # 与 Gatekeeper Agent 进行交互，获取必要信息
+
+        response = self._interact_with_gatekeeper(
+            action, full_case_details
+        )
+
+    # 最终诊断评分
+
+    judgement = self._judge_diagnosis(
+        final_diagnosis, ground_truth_diagnosis
+    )
+
+```
+
+**单轮处理流程**
+
+
+
+
+
