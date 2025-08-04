@@ -88,6 +88,87 @@ def run(self, initial_case_info: str, full_case_details: str, ground_truth_diagn
 
 **单轮处理流程**
 
+在单轮的处理中，主要就是上面五种角色的 Agent 针对当前病例的有针对性的处理，与原始论文存在一些差异的地方在于构建了一个共识协调员的 Agent，用于将不同的 Agent 的信息进行汇总，给出最终的下一步行动，充当上面提到的综合性的辩论（ `Chain of Debate`）的作用。具体实现如下所示：
+
+```python
+def _run_panel_deliberation(self, case_state: CaseState) -> Action:
+    # Dr Hypothesis Agent：维护基于概率排序的鉴别诊断
+
+    hypothesis_prompt = self._get_prompt_for_role(AgentRole.HYPOTHESIS, case_state) + "\n\n" + base_context
+    hypothesis_response = self._safe_agent_run(
+        self.agents[AgentRole.HYPOTHESIS], hypothesis_prompt, agent_role=AgentRole.HYPOTHESIS
+    )
+    self._update_differential_from_hypothesis(case_state, hypothesis_response)
+
+    if hasattr(hypothesis_response, 'content'):
+        deliberation_state.hypothesis_analysis = hypothesis_response.content
+    else:
+        deliberation_state.hypothesis_analysis = str(hypothesis_response)
+
+    # Dr. Test-Chooser Agent：选择最优的诊断检查
+
+    test_chooser_prompt = self._get_prompt_for_role(AgentRole.TEST_CHOOSER, case_state) + "\n\n" + base_context
+    if self.mode == "question_only":
+        test_chooser_prompt += "\n\nIMPORTANT: This is QUESTION-ONLY mode. You may ONLY recommend patient questions, not diagnostic tests."
+    deliberation_state.test_chooser_analysis = self._safe_agent_run(
+        self.agents[AgentRole.TEST_CHOOSER], test_chooser_prompt, agent_role=AgentRole.TEST_CHOOSER
+    )
+
+    # Dr. Challenger Agent：充当质疑者，识别潜在的锚定偏差，强调相互矛盾的证据，并提出可能推翻当前主诊断的检查
+
+    challenger_prompt = self._get_prompt_for_role(AgentRole.CHALLENGER, case_state) + "\n\n" + base_context
+    deliberation_state.challenger_analysis = self._safe_agent_run(
+        self.agents[AgentRole.CHALLENGER], challenger_prompt, agent_role=AgentRole.CHALLENGER
+    )
+
+    # Dr. Stewardship Agent：评估成本效益，确保在预算内进行诊断
+
+    stewardship_prompt = self._get_prompt_for_role(AgentRole.STEWARDSHIP, case_state) + "\n\n" + base_context
+    if self.enable_budget_tracking:
+        stewardship_prompt += f"\n\nBUDGET TRACKING ENABLED - Current cost: ${case_state.cumulative_cost}, Remaining: ${remaining_budget}"
+    deliberation_state.stewardship_analysis = self._safe_agent_run(
+        self.agents[AgentRole.STEWARDSHIP], stewardship_prompt, agent_role=AgentRole.STEWARDSHIP
+    )
+
+    # Dr. Checklist Agent：质量保证，确保诊断过程符合医学标准
+
+    checklist_prompt = self._get_prompt_for_role(AgentRole.CHECKLIST, case_state) + "\n\n" + base_context
+    deliberation_state.checklist_analysis = self._safe_agent_run(
+        self.agents[AgentRole.CHECKLIST], checklist_prompt, agent_role=AgentRole.CHECKLIST
+    )
+
+    # Consensus Coordinator Agent：综合所有专家意见，做出最终决策
+
+    consensus_prompt = deliberation_state.to_consensus_prompt()
+    if self.mode == "budgeted" and remaining_budget <= 0:
+        consensus_prompt += "\n\nBUDGET CONSTRAINT: Budget exceeded - must either ask questions or provide final diagnosis."
+    action_dict = self._get_consensus_with_retry(consensus_prompt)
+    action = Action(**action_dict)
+    action = self._validate_and_correct_action(action, case_state, remaining_budget)
+    return action
+```
+
+#### 询证医学流程对比
+
+最近刚好看到询证医学的书 [从症状到诊断：循证学指导](https://book.douban.com/subject/36280047/) ，其中就可以看到常规的询证医学的流程，具体如下所示：
+
+![manual](/img/in-post/mai-dxo/manual.jpg)
+
+医学的询证医学的流程看起来比较复杂，但是整体的流程抽象简化后如下所示：
+
+![manual_loop](/img/in-post/mai-dxo/manual_loop.png)
+
+而将上面 MAI-DxO 的流程进行抽象简化，并与对应的 Agent 关联起来，可以看到流程如下所示：
+
+![mai_dxo_loop](/img/in-post/mai-dxo/mai_dxo_loop.png)
+
+可以看到 MAI-DxO 是对当前人类询证医学诊断的模拟，并扩充了常规询证医学的角色，引入 `Dr Challenger Agent ` 去发现一些逻辑偏差与遗漏信息，引入 `Dr Stewardship Agent ` 去进行检查成本的控制。预期整体流程是有符合医学逻辑的。
+
+## 总结
+
+本文是对 MAI-DxO 的深入分析，框架整体是符合医学逻辑的，从现有结果来看，针对复杂病例的诊大模型确实有一些优势，但是是否就意味着大模型在疾病诊断上可以真的碾压人类医生呢？
+
+当前医学知识十分复杂，任何单一的医生能掌握的知识相对有限，因此科室的区分是十分必要的。但是在复杂病例下，可能会涉及到不同的科室，导致目前的测试很多都是全科医生或初级保健医生，而这些医生远不能代表人类医生的最高水准，如果人类在特定病例下启用多学科会诊，预期准确性应该还是优于 MAI-DxO 框架。但是 MAI-DxO 确实是一个不错的跨学科的诊断框架，与人类医生结合起来，应该还是能带来明显的协助作用的。
 
 
 
