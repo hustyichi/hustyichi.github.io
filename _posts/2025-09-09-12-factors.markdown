@@ -17,3 +17,14 @@ tags:
 
 在这篇文章中，针对 Agent 落地中存在的问题，给出更进一步的详细经验分享，希望对大家的实际的 Agent 产品落地有所帮助。本文主要的内容主要参考自 [12-factor-agents](https://github.com/humanlayer/12-factor-agents?tab=readme-ov-file)。
 
+## 方案选择
+
+在构建 Agent 的方案中，一直存在两种相对差异明显的方案，分别是 Agentic 的方案与 Workflow 的方案。关于这两种方案的的选择一直存在着争论。
+
+**Agentic 方案**
+
+Agentic 的方案强调 Agent 的自主性，属于 Agent-First 的方案，开发者只需要提供好目标以及相应的工具，Agent 就可以自行完成任务。采用此方案最知名的项目是 [AutoGPT](https://github.com/Significant-Gravitas/AutoGPT)，这种方案利用大模型自主规划，执行任务，可以使用通用方案完成不同的任务。
+
+**Workflow 方案**
+
+Workflow 的方案强调业务的流程化，属于 User-First 的方案，开发者根据业务需求，将原始任务抽象为多个步骤，在特定步骤可以使用 Agent 完成。采用此方案相对知名比如之前文章详细介绍过的 [Dify](https://zhuanlan.zhihu.com/p/706381113)。
