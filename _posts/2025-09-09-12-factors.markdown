@@ -1,0 +1,19 @@
+---
+layout: post
+title: "为什么大模型 Agent 产品总是无法落地？来自实战派的经验分享（二）"
+subtitle:   "Why do large-scale agent products always fail to land? Experience sharing from practical people（2）"
+date:       2025-09-09 08:00:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - llm
+    - agent
+---
+
+## 背景介绍
+
+在之前的文章 [Agent 落地经验分享（一）](https://zhuanlan.zhihu.com/p/1948344616962224589) 中，介绍了 Agent 落地中存在的问题，并给出了一些初步的解决方案。
+
+在这篇文章中，针对 Agent 落地中存在的问题，给出更进一步的详细经验分享，希望对大家的实际的 Agent 产品落地有所帮助。本文主要的内容主要参考自 [12-factor-agents](https://github.com/humanlayer/12-factor-agents?tab=readme-ov-file)。
+
