@@ -1,0 +1,96 @@
+<svg viewBox="0 0 800 500" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background -->
+  <rect width="800" height="500" fill="#ffffff"/>
+  
+  <!-- Title -->
+  <text x="400" y="30" text-anchor="middle" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#2c3e50">
+    Token Economics: Why Conversational Agents Don't Scale
+  </text>
+  
+  <!-- Grid lines -->
+  <defs>
+    <pattern id="grid2" width="60" height="35" patternUnits="userSpaceOnUse">
+      <path d="M 60 0 L 0 0 0 35" fill="none" stroke="#ecf0f1" stroke-width="1"/>
+    </pattern>
+  </defs>
+  <rect x="80" y="60" width="600" height="350" fill="url(#grid2)"/>
+  
+  <!-- Axes -->
+  <line x1="80" y1="410" x2="680" y2="410" stroke="#34495e" stroke-width="2"/>
+  <line x1="80" y1="60" x2="80" y2="410" stroke="#34495e" stroke-width="2"/>
+  
+  <!-- Y-axis labels -->
+  <text x="70" y="415" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">$0</text>
+  <text x="70" y="345" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">$1</text>
+  <text x="70" y="275" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">$2.5</text>
+  <text x="70" y="205" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">$5.0</text>
+  <text x="70" y="135" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">$10</text>
+  <text x="70" y="65" text-anchor="end" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">$20</text>
+  
+  <!-- X-axis labels -->
+  <text x="80" y="430" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">0</text>
+  <text x="200" y="430" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">25</text>
+  <text x="320" y="430" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">50</text>
+  <text x="440" y="430" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">75</text>
+  <text x="560" y="430" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">100</text>
+  <text x="680" y="430" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" fill="#7f8c8d">125</text>
+  
+  <!-- Axis labels -->
+  <text x="380" y="460" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2c3e50">
+    Conversation Turns
+  </text>
+  <text x="30" y="235" text-anchor="middle" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2c3e50" transform="rotate(-90, 30, 235)">
+    Cost Per Response
+  </text>
+  
+  <!-- Conversational agent cost curve (quadratic) -->
+  <path d="M 80,408 Q 200,390 320,320 Q 440,200 560,120 Q 620,80 680,60" 
+        fill="none" stroke="#e74c3c" stroke-width="4"/>
+  
+  <!-- Stateless agent cost line (flat) -->
+  <line x1="80" y1="395" x2="680" y2="395" stroke="#27ae60" stroke-width="4"/>
+  
+  <!-- Data points and callouts -->
+  <circle cx="320" cy="320" r="6" fill="#e74c3c"/>
+  <line x1="320" y1="320" x2="320" y2="280" stroke="#2c3e50" stroke-width="1"/>
+  <rect x="240" y="250" width="160" height="30" fill="#ffe6e6" stroke="#e74c3c" stroke-width="1" rx="3"/>
+  <text x="320" y="270" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#c0392b">
+    50 turns = $2.5/response
+  </text>
+  
+  <circle cx="560" cy="120" r="6" fill="#e74c3c"/>
+  <line x1="560" y1="120" x2="560" y2="80" stroke="#2c3e50" stroke-width="1"/>
+  <rect x="480" y="50" width="160" height="30" fill="#ffe6e6" stroke="#e74c3c" stroke-width="1" rx="3"/>
+  <text x="560" y="70" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#c0392b">
+    >100$ cost
+  </text>
+  
+  <circle cx="680" cy="395" r="6" fill="#27ae60"/>
+  <line x1="680" y1="395" x2="680" y2="355" stroke="#2c3e50" stroke-width="1"/>
+  <rect x="600" y="325" width="160" height="30" fill="#e8f5e8" stroke="#27ae60" stroke-width="1" rx="3"/>
+  <text x="680" y="345" text-anchor="middle" font-family="Arial, sans-serif" font-size="12" font-weight="bold" fill="#1e8449">
+    Any length = $0.05/response
+  </text>
+  
+  <!-- Legend -->
+  <rect x="100" y="80" width="250" height="70" fill="#ffffff" stroke="#bdc3c7" stroke-width="1"/>
+  <text x="110" y="100" font-family="Arial, sans-serif" font-size="14" font-weight="bold" fill="#2c3e50">Approach Comparison</text>
+  
+  <line x1="110" y1="115" x2="140" y2="115" stroke="#e74c3c" stroke-width="3"/>
+  <text x="150" y="120" font-family="Arial, sans-serif" font-size="12" fill="#2c3e50">Conversational Agent (Quadratic Growth)</text>
+  
+  <line x1="110" y1="135" x2="140" y2="135" stroke="#27ae60" stroke-width="3"/>
+  <text x="150" y="140" font-family="Arial, sans-serif" font-size="12" fill="#2c3e50">Stateless Agent (Flat Cost)</text>
+  
+  <!-- Warning box -->
+  <rect x="400" y="300" width="270" height="80" fill="#fff3cd" stroke="#f39c12" stroke-width="2" rx="5"/>
+  <text x="535" y="320" text-anchor="middle" font-family="Arial, sans-serif" font-size="13" font-weight="bold" fill="#b7950b">
+    The Economics Problem
+  </text>
+  <text x="535" y="340" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#85650d">
+    Long conversations = Processing ALL previous context
+  </text>
+  <text x="535" y="355" text-anchor="middle" font-family="Arial, sans-serif" font-size="11" fill="#85650d">
+    Token costs scale quadratically with length
+  </text>
+</svg>
