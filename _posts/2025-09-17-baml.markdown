@@ -1,0 +1,62 @@
+---
+layout: post
+title: "迈出解决 Agent 不确定性的第一步：结构化解析"
+subtitle:   "Taking the First Step to Solving Agent Uncertainty: Structured Parsing"
+date:       2025-09-17 22:30:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - llm
+    - agent
+---
+
+## 背景介绍
+
+在之前的文章 [Agent 落地分享一](https://zhuanlan.zhihu.com/p/1948344616962224589) 和 [Agent 落地分享二](https://zhuanlan.zhihu.com/p/1948880288399750285) 中讲到了 Agent 无法落地的诸多问题以及相应的解决方案。中间反复提到要提升大模型产品的确定性，没有人会为一个偶尔超常发挥，但是是时不时抽风的产品买单。
+
+如何提升大模型产品的确定性，是每一个大模型产品研发团队都需要面对的问题。提升大模型产品的确定性有很多维度，本文就从一种相对实用的场景结构化解析开始，介绍我最近实践 Agent 产品中的一些相对有效的方案。
+
+## 踩坑经历
+
+最近在带队开发一款医疗领域的 Agent 产品，与之前的产品形态有很大差异，需要复杂的多 Agent 交互与迭代，因此原有的基础 Agent 灵活性不够，因此考虑基于基于全新的框架进行开发。
+
+在对热门的多 Agent 框架 CrewAI、AutoGen、LangGraph、Agno、OpenAI Agents、Pydantic AI、MetaGPT 进行调研后，考虑到严肃医学场景的确定性要求高，因此选择了相对轻量，上手门槛低，而且海外开发者大量推荐的 [Pydantic AI](https://ai.pydantic.dev/) 进行了搭建，结构化解析相对简单, 对于本来就使用 Pydantic 的团队来说真的太友好了。从下面的简单例子就能看到使用 Pydantic AI 的简洁与易用。
+
+```python
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent
+
+
+class JudgeOutput(BaseModel):
+    score: float = Field(description="评分，范围 1-5", ge=1, le=5)
+    justification: str = Field(description="针对评分的详细解释与依据")
+
+
+agent = Agent(
+    model=model_name,
+    system_prompt=build_system_prompt(),
+    result_type=JudgeOutput,
+)
+agent.run(prompt)
+```
+
+这个使用方式，简直是太优雅了。使用体验直追 Python 界优雅鼻祖 [requests](https://github.com/psf/requests)。当然在此期间，我们也基于 CrewAI 低成本搭建了一个版本, 开发速度很快，灵活性太差，迅速放弃了。
+
+在实际使用了一段时候我们发现，大模型的结构化输出稳定性的确堪忧。在少量样本情况下测试还不错，开启批量的大规模测试时就发现出现不少结构化解析失败。我们尝试进行了 prompt 调优，增加 Few Shot，调整模型 tempature，增加重试次数等一系列措施后效果有所提升，但是依旧不时出现解析失败，而且在产品迭代过程中，可能因为产品中小幅调整，结构化解析就突然大量失败。
+
+在迭代过程中尝试了宝藏项目 [BAML](https://github.com/boundaryml/baml)，实际体验来看，结构化解析的效果相当稳定，而且对 prompt 的依赖很低，基本不需要开发人员胆战心惊地优化出一个完美的 prompt。后续的方案就重点介绍下此方案。
+
+## BAML
+
+
+
+## 优秀背后的秘密
+
+https://boundaryml.com/blog/schema-aligned-parsing
+
+
+## 总结
+
+
+
