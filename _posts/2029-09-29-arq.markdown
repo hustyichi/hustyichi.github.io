@@ -1,0 +1,21 @@
+---
+layout: post
+title: "可控可信的工业界 Agent 方案研究 - parlant"
+subtitle:   "Controllable and Trustworthy Industrial Agent Solutions - Parlant"
+date:       2029-09-29 07:30:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - llm
+    - agent
+---
+
+## 背景介绍
+一直以来，我都尝试将大模型 Agent 技术落地在相对严肃的医疗场景中，在这种场景下，对 Agent 的可靠性与合规性要求极高。为了提升 Agent 的可控性，需要大量算法 + 工程技术的叠加，比如之前分享过的基于 [BAML](https://zhuanlan.zhihu.com/p/1951981274425167989) 的结构化解析方案。最近刚好看到了主打 Agent 合规能力的开源 Agent 框架 [parlant](https://github.com/emcie-co/parlant)，结合官方方案介绍以及对应的开源实现了解其实现细节，感觉很有启发，本文就整理其中最核心的技术技术 ARQ。
+
+## ARQ
+
+ARQ 全称为 Attentive Reasoning Queries（注意力推理查询），此方案是 Parlant 的核心基础能力，可以有效提升 Agent 组件的一致性和可靠性。更难得的是，ARQ 的方案并不复杂，无需进行模型微调，相对简单就可以应用起来，官方称其为 COT 的升级版。具体的介绍有相关的[论文](https://arxiv.org/pdf/2503.03669)。
+
+
