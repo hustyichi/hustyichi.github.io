@@ -12,51 +12,181 @@ tags:
 ---
 
 ## 背景介绍
-一直以来，我都尝试将大模型 Agent 技术落地在相对严肃的医疗场景中，在这种场景下，对 Agent 的可靠性与合规性要求极高。为了提升 Agent 的可控性，需要大量算法 + 工程技术的叠加，比如之前分享过的基于 [BAML](https://zhuanlan.zhihu.com/p/1951981274425167989) 的结构化解析方案。最近刚好看到了主打 Agent 合规能力的开源 Agent 框架 [parlant](https://github.com/emcie-co/parlant)，结合官方方案介绍以及对应的开源实现了解其实现细节，感觉很有启发，本文就整理其中最核心的技术技术 ARQ。
 
-## ARQ
+在过去将大模型 Agent 技术落地到医疗等严肃场景时，一直面临着极高的可靠性与合规性要求。为了提升 Agent 的可控性，需要大量算法 + 工程技术的叠加，比如之前分享过的基于 [BAML](https://zhuanlan.zhihu.com/p/1951981274425167989) 的结构化解析方案。近期，关注到Emcie公司开源的高可靠性Agent框架 [Parlant](https://github.com/emcie-co/parlant)，该框架以强化指令遵循为核心能力，其核心技术 Attentive Reasoning Queries (ARQ) 看起来对可大模型的可靠性提升还是比较明显的。
 
-ARQ 全称为 Attentive Reasoning Queries（注意力推理查询），此方案是 Parlant 的核心基础能力，可以有效提升 Agent 组件的一致性和可靠性。更难得的是，ARQ 的方案并不复杂，无需进行模型微调，相对简单就可以应用起来，官方称其为 COT 的升级版, 在论文 [Attentive Reasoning Queries: A Systematic Method for Optimizing Instruction-Following in Large Language Models](https://arxiv.org/pdf/2503.03669) 中有详细介绍。
+研究表明，ARQ能够显著提升大模型在多轮对话中的指令遵循能力，在 87 个测试场景中达到 90.2% 的成功率，优于传统Chain-of-Thought（86.1%）和直接响应（81.5%）方式。本文将深入分析ARQ的技术原理，并结合 Parlant 框架的实际应用进行探讨。
 
-#### 为什么
+## ARQ 核心原理
 
-有 Agent 经验的开发者在面对大模型时往往会发现大模型很容易出现指令遵循相关的问题，特别是在问题相对复杂或者上下文较长的情况下，指令遵循的能力会大幅下降。这个与大模型底层的注意力机制有关，在模型推理过程中，随着上下文的增加，模型更容易忽略掉上下文中关键信息（特定是因为 [Lost in Middle](https://arxiv.org/abs/2307.03172) 忽略掉上下文中间的的关键信息），从而导致最终的输出结果偏离预期。
+ARQ（Attentive Reasoning Queries，注意力推理查询）是Parlant框架的核心技术创新。与传统推理方法相比，ARQ通过结构化的中间查询机制，系统地引导大模型进行逐步推理，从而显著提升复杂场景下的指令遵循能力。该技术无需模型微调，即可在各种部署环境中直接应用，被作者称为"Chain-of-Thought的工业级升级版本"。具体的技术细节可参考论文 [Attentive Reasoning Queries: A Systematic Method for Optimizing Instruction-Following in Large Language Models](https://arxiv.org/pdf/2503.03669)。
 
-在之前的实践中，[COT](https://www.promptingguide.ai/techniques/cot) 是一个不错的提升方案，通过引导大模型输出中间推理结果，就像人在做复杂数学运算中自己给自己讲中间计算步骤一样，这样可以引入模型逐步进行推理，从而更容易给出最终的正确答案。而 ARQ 就是此思想的延伸，通过必要的中间状态的设计，提升最终结果的可靠性，主要用关键指令，决策和规避模型推理失败的问题。
+### 问题背景
 
-#### 具体方案
+在复杂Agent系统开发中，大模型的指令遵循问题始终是一个核心技术挑战。随着对话轮次增多、上下文累积以及任务复杂度提升，传统的大模型容易出现指令遗忘，准确性下降，约束失效的问题。
 
-ARQ 是通过人为设计的中间数据与推理链路，引导模型基于正确的信息进行逐步推理，从而提升最终结果的可靠性。整体机制建立在大模型的两大基础之上：
+这些问题的根源在于大模型的注意力机制在处理长序列时存在局限性，以及在复杂推理过程中缺乏系统性的约束引导。在过往的实践中，[COT](https://www.promptingguide.ai/techniques/cot) 是一个不错的提升方案，通过引导大模型输出中间推理结果，就像人在做复杂数学运算中自己给自己讲中间计算步骤一样，这样可以引入模型逐步进行推理，从而更容易给出最终的正确答案。但是 COT 依旧存在一些问题，让模型自由推理，缺乏对推理路径的约束，无法保证模型按照预设的推理路径进行推理, 最终的准确性依旧无法保证。
 
-1. 结构化输出，ARQ 利用结构化输出可以精准控制模型输出的位置与格式，方便引导中间结果的输出；
-2. LLM 的近因偏差，由于大模型最近的 token 会对输出影响较大，ARQ 会设计将关键信息输出前置输出，避免因为注意力机制忽略核心信息。
+### ARQ 方案
 
-ARQ 机制包含的具体步骤如下所示：
+ARQ通过结构化中间查询的方式解决了上述问题。与CoT的"自由思考"不同，ARQ采用预定义的推理蓝图，通过特定查询序列来：
 
-1. 引导 ARQ 阶段：LLM 处理一系列预先确定的引导性问题，这些问题具有三个关键功能：
+1. **重新激活关键指令**：在关键时刻提醒模型关注重要约束
+2. **促进渐进推理**：引导模型按特定逻辑顺序处理信息
+3. **规避失败模式**：主动识别和规避已知的推理陷阱
+4. **提高计算效率**：通过精心设计的查询序列，避免冗余推理
 
-    - 恢复关键指令
-    - 恢复提示中的重要上下文信息
-    - 促进逐步推理和中间计算
-2. 响应生成：根据主要引导阶段的结果，LLM 生成最终的响应;
-3. （可选）响应验证：LLM 通过回答预定义的验证问题（例如，“响应是否与前导 ARQ 阶段中列出的约束一致？”）来评估其建议的响应是否满足所有要求。如果不一致，则生成并验证新的响应候选，直到找到令人满意的响应。
+其技术架构建立在两个关键大模型基础能力之上：
 
-一个具体的案例如下所示：
+1. **结构化输出控制**：利用Pydantic等结构化解析框架，精准控制模型的输出格式和内容位置，确保关键信息按预设模式输出
+2. **近因偏差优化**：为了规避原始上下文中重要信息丢失问题，ARQ 会设计将关键信息输出前置输出，避免因为注意力机制忽略核心信息。
+
+ARQ的执行过程分为三个核心阶段：
+
+1. **引导性查询阶段**
+
+在这个阶段，大模型依次回答一系列预先设计的结构化查询。这些查询具备三大核心功能：
+
+- 关键指令重新激活：在推理过程中重新提醒模型关注特定的约束条件
+- 重要上下文信息提取：从历史对话中系统性地提取和整理关键信息
+- 中间推理促进：引导模型进行结构化的中间计算和逻辑判断
+
+2. **响应生成阶段**
+
+基于前一阶段的查询结果，大模型生成针对具体任务的最终响应。这一阶段充分利用结构化查询的输出信息，确保生成的响应与引导阶段识别的约束条件保持一致。
+
+3. **可选的验证阶段**
+
+为提高可靠性，ARQ可选择性地包含响应验证机制。大模型通过回答预定义的验证问题（如"生成的响应是否与关键约束一致？"），评估响应的质量和合规性。如验证失败，系统将触发响应重新生成，形成自我修正循环。
+
+### 案例分析
+
+以餐厅推荐场景为例, 可以看到不同方案的效果差异：
 
 ![example](/img/in-post/arq/example.png)
 
 可以看到不同方案的在进行餐厅推荐中差异：
 
-- 直接调用大模型可能会直接给出最终的结论，作为一个黑盒流程，无法确定推荐的合理性；
-- COT 方案引导先给出推荐理由，可以一定程度暴露推理链路，但是无法引导模型推理时关注核心信息；
-- ARQ 方案会引导模型先确定群体的限制，口味偏好，可选餐厅以及餐厅的匹配程度，基于这些信息给出最终结论；
+- **直接调用模型**： 直接调用大模型可能会直接给出最终的结论，作为一个黑盒流程，无法确定推荐的合理性；
+- **Chain-of-Thought方法**：COT 方案引导先给出推荐理由，可以一定程度暴露推理链路，但是无法引导模型推理时关注核心信息；
+- **ARQ方法**：模型被引导先识别群体约束条件→确定口味偏好→评估候选餐厅→逐一进行匹配度评估→基于结构化信息生成最终推荐。
 
-#### 结果比较
+### 性能表现与效果评估
+
+根据论文中的实验数据，ARQ 在多项指标上展现出显著优势：
 
 ![result](/img/in-post/arq/result.png)
 
-从结果上看，ARQ 方案在可信度与可靠性上都有明显提升, 特别是在复杂场景下，ARQ 方案引导模型正确推理的能力明显提升。
 
-## Parlant 实践
+## Parlant框架中的实践应用
+
+Parlant框架将ARQ技术深度集成到了其架构中，几乎所有的大模型交互都通过ARQ机制进行约束和引导。下面以工具选择这一基础Agent场景为例，详细剖析ARQ的实现细节。
+
+工具调用场景是 Agent 中一个常规的场景，主要用于从现有工具列表中选择合适工具，方便后续进行工具调用。常规实现方案中主要借助工具描述，让大模型直接基于描述与当下的用户需求直接进行选择，这种情况下对工具描述的要求很高，而且随着工具选择范围的增加，工具选择的准确性会大幅下降。
+
+Parlant框架通过ARQ机制重新设计了工具选择的推理路径（详细实现见[single_tool_batch.py](https://github.com/emcie-co/parlant/blob/develop/src/parlant/core/engines/alpha/tool_calling/single_tool_batch.py)），使其能够在复杂多轮对话中保持高可靠性和一致性。
+
+Parlant 通过 Pydantic 等结构化解析框架实现了 ARQ 机制。核心思路是定义严格的输出数据结构，强制模型在推理过程中产生结构化的中间信息。以下展示工具选择场景的核心数据结构：
+
+```python
+class SingleToolBatchToolCallEvaluation(DefaultBaseModel):
+    # 用几句话来解释此时是否需要、如何以及在何种程度上需要调用该工具
+
+    applicability_rationale: str
+
+    # 是否需要调用该工具
+
+    is_applicable: bool
+
+    # 参数评估列表
+
+    argument_evaluations: Optional[list[SingleToolBatchArgumentEvaluation]] = None
+
+    # 是否已经调用过该工具
+
+    same_call_is_already_staged: bool
+
+    # 概述一下此呼吁在适用性方面与其他工具的比较
+
+    comparison_with_rejected_tools_including_references_to_subtleties: Optional[str] = None
+
+    # 需要注意的重要细节内容
+
+    relevant_subtleties: str
+
+    # 被拒绝的工具是否更适合
+
+    a_rejected_tool_would_have_been_a_better_fit_if_it_werent_already_rejected: Optional[bool] = (
+        None
+    )
+
+    # 被拒绝的工具名称
+
+    potentially_better_rejected_tool_name: Optional[str] = None
+
+    # 被拒绝的工具理由
+
+    potentially_better_rejected_tool_rationale: Optional[str] = None
+
+    # 被拒绝的工具是否应该与候选工具一起运行
+
+    the_better_rejected_tool_should_clearly_be_run_in_tandem_with_the_candidate_tool: Optional[
+        bool
+    ] = None
+
+    # 可选参数是否缺失相关参数
+
+    are_optional_arguments_missing: Optional[bool] = None
+    are_non_optional_arguments_missing: Optional[bool] = None
+    allowed_to_run_without_optional_arguments_even_if_they_are_missing: Optional[bool] = None
 
 
+class SingleToolBatchSchema(DefaultBaseModel):
+    # 顾客最近一条消息
+
+    last_customer_message: Optional[str] = None
+
+    # 顾客最近的需求
+
+    most_recent_customer_inquiry_or_need: Optional[str] = None
+
+    # 顾客最近的需求是否已经解决
+
+    most_recent_customer_inquiry_or_need_was_already_resolved: Optional[bool] = None
+
+    # 工具名称
+
+    name: str
+
+    # 工具运行此工具需要注意的重要细节内容
+
+    subtleties_to_be_aware_of: str
+
+    # 工具调用评估列表
+
+    tool_calls_for_candidate_tool: list[SingleToolBatchToolCallEvaluation]
+```
+
+从上面工具调用返回值的定义 `SingleToolBatchSchema` 可以看到，在确定合适的调用工具时，Parlant 会要求大模型先要求大模型输出必要前置信息：
+
+- 重复顾客最近的消息
+- 确定顾客实际需求，相关需求是否已经解决
+- 评估可选工具的适用性
+- 确定相关工具调用参数
+- 将工具与潜在工具进行比较
+
+基于大量的中间过程的输出，从而最终确定合适的工具。
+
+
+## 总结与思考
+
+在 ARQ 的研究的过程中，我一直想到早期工作时 leader 在进行复杂需求分配时，为了保证新人正确理解和处理任务，会在需求解释和分配之后，要求新人用自己的方式重新表述需求，解释需求中的核心点，以及相关的方案与思路。回头来看，与 ARQ 的解决问题的思路有异曲同工之妙。
+
+新人在解决复杂需求时，往往存在大量的中间环节，前期因为沟通方式，需求理解差异，新人知识盲区等原因，导致最终的执行结果与预期存在差异。通过引导新人输出中间过程，才能更好地发现新人解决流程中的问题，从而引导出更好的最终结果。
+
+总结而言，ARQ 的价值不仅在于技术改进，更在于其体现的约束式推理哲学：
+
+1. **显性化隐性过程**：将原本在大模型内部"黑盒"的推理过程显性化、结构化
+2. **预防性质量控制**：在推理过程中主动识别和规避已知的失败模式
+3. **可追溯的决策路径**：每个决策都有明确的中间步骤和逻辑依据
+4. **领域知识的系统性融入**：将专家经验转化为可执行的推理蓝图
