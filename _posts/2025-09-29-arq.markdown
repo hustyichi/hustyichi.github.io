@@ -2,7 +2,7 @@
 layout: post
 title: "可控可信的工业界 Agent 方案研究 - parlant"
 subtitle:   "Controllable and Trustworthy Industrial Agent Solutions - Parlant"
-date:       2029-09-29 07:30:00
+date:       2025-09-29 07:30:00
 author:     "Bryan"
 header-mask: 0.3
 catalog:    true
