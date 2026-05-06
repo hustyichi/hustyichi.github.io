@@ -1,7 +1,7 @@
 ---
 layout: post
-title: "大型代码库开发的全新解法 - claude-context"
-subtitle:   "A New Solution for Large Codebases — claude-context"
+title: "大型代码库开发的全新解法 - Claude-context"
+subtitle:   "A New Solution for Large Codebases — Claude-context"
 date:       2026-05-05 20:30:00
 author:     "Bryan"
 header-mask: 0.3
@@ -40,7 +40,7 @@ tags:
 
 Claude-context 采用了**向量检索 + BM25 稀疏检索**的混合检索方案。具体实现在 `packages/core/src/context.ts` 的 `semanticSearch()` 方法中。
 
-得益于底层 Milvus 向量库的良好封装，这部分的代码设计极为简洁。系统只需将用户的查询意图转换为 Milvus 的混合检索请求，并在最后使用 **RRF（Reciprocal Rank Fusion，倒数排名融合）** 算法对检索结果进行重排。简化后的核心逻辑如下：
+得益于底层 Milvus 向量库的良好封装，这部分的代码设计极为简洁。系统只需将用户的查询意图转换为 Milvus 的混合检索请求，并在最后使用 RRF（Reciprocal Rank Fusion，倒数排名融合） 算法对检索结果进行重排。简化后的核心逻辑如下：
 
 ```ts
 const searchRequests: HybridSearchRequest[] = [
