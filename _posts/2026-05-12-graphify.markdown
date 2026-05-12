@@ -1,0 +1,18 @@
+---
+layout: post
+title: "大型代码库开发的全新解法（二） - Graphify"
+subtitle:   "A New Solution for Large Codebases (2) — Graphify"
+date:       2026-05-12 20:30:00
+author:     "Bryan"
+header-mask: 0.3
+catalog:    true
+tags:
+    - llm
+    - agent
+    - graph
+---
+
+## 背景介绍
+
+在上周梳理了基于 RAG 的大型代码库解决方案 [claude-context](https://zhuanlan.zhihu.com/p/2035294952243118295) 后，本周继续探索另一种方案，那就是最近很热门的开源项目：基于图谱（Graph）的大型代码库解决方案 [Graphify](https://github.com/safishamsi/graphify)。恍惚间历史似乎重演了，几年前 RAG 遇到瓶颈时，微软也是在大火的项目 [GraphRAG](https://github.com/microsoft/graphrag) 中将检索方案升级为知识图谱。目前在 AI 编程领域也发生了类似的事情，在大型的代码仓库中，RAG 与 GraphRAG 也都轮番登场了。
+
