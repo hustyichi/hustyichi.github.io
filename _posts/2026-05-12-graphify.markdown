@@ -14,5 +14,51 @@ tags:
 
 ## 背景介绍
 
-在上周梳理了基于 RAG 的大型代码库解决方案 [claude-context](https://zhuanlan.zhihu.com/p/2035294952243118295) 后，本周继续探索另一种方案，那就是最近很热门的开源项目：基于图谱（Graph）的大型代码库解决方案 [Graphify](https://github.com/safishamsi/graphify)。恍惚间历史似乎重演了，几年前 RAG 遇到瓶颈时，微软也是在大火的项目 [GraphRAG](https://github.com/microsoft/graphrag) 中将检索方案升级为知识图谱。目前在 AI 编程领域也发生了类似的事情，在大型的代码仓库中，RAG 与 GraphRAG 也都轮番登场了。
+在上周梳理了基于 RAG 的大型代码库解决方案 [claude-context](https://zhuanlan.zhihu.com/p/2035294952243118295) 后，本周继续探索另一种方案，那就是最近很热门的开源项目：基于图谱（Graph）的大型代码库解决方案 [Graphify](https://github.com/safishamsi/graphify)。恍惚间历史似乎在重复上演，几年前 RAG 遇到瓶颈时，微软也是在大火的项目 [GraphRAG](https://github.com/microsoft/graphrag) 中将向量检索方案升级为知识图谱。目前在 AI 编程领域也发生了类似的事情，为了解决 AI 编程过程中的记忆问题，RAG 与 GraphRAG 也都轮番登场了。
+
+
+## 功能简介
+众所周知，在Claude Code中，默认使用的是基于 Grep 的精确检索方案。这个在一般代码规模下是可行的，可是随着代码仓库的逐步扩大，这个方案可能会越面临越来越大的压力。而 Graphify 通过将代码库构建为一个知识图谱，从而实现更加强大的检索能力。
+
+遵循产品经常遵循的 Dogfooding 的理念，尝试使用 Graphify 分析了 Graphify 自己的代码库，我使用 Codex 中执行 `$graphify .` 分析之后，在本地的 graphify-out 目录中最终构建了对应的代码库知识图谱。
+
+![graphify](/img/in-post/graphify/graphify.png)
+
+在实际的产出物中，`graphify-out/graph.json` 中实际存储的都是图谱节点，而最核心的产出物中 `graphify-out/GRAPH_REPORT.md` 除了记录大量的索引信息之外，还存在完整的 Community 的信息，类似如下所示：
+
+![community](/img/in-post/graphify/community.png)
+
+熟悉 GraphRAG 的读者一定马上就发现了，这个大概率就是 leiden 聚类算法生成的社区。不熟悉的可以去考古之前 [RagFlow 知识图谱实践与优化方案探索](https://zhuanlan.zhihu.com/p/1891156928022939096) 文章。
+
+虽然产出物可以正确生成如何保证大模型会正确的参考这些产出物的信息呢？熟悉Claude Code的可能立马就想到了，必然是将相关的产出物的信息放入 Claude Code 或者是 Codex 中的全局文件中，在此方案是通过 `graphify codex install` 实现的。执行完成后会在全局文件 `AGENTS.md` 中写入元信息提醒大模型后续参考。
+
+```md
+## graphify
+
+This project has a graphify knowledge graph at graphify-out/.
+
+Rules:
+- Before answering architecture or codebase questions, read graphify-out/GRAPH_REPORT.md for god nodes and community structure
+- If graphify-out/wiki/index.md exists, navigate it instead of reading raw files
+- After modifying code files in this session, run `graphify update .` to keep the graph current (AST-only, no API cost)
+
+```
+
+从现有流程就能大致了解 Graphify 的核心用法了，看起来就是将代码库图谱化，利用图谱聚类后提供更加结构化的图谱信息，提升后续检索的质量。
+
+## 核心流程
+
+Graphify 的核心处理流程如下所示：
+
+> detect()  →  extract()  →  build_graph()  →  cluster()  →  analyze()  →  report()  →  export()
+
+- detect(): 负责找出项目里有哪些可处理的文件；
+- extract(): 从文件中提取实体和关系；
+- build_graph(): 把这些点和边合成知识图谱；
+- cluster(): 把相关内容分成主题社区。
+- analyze(): 找核心节点、重要连接和结构特征；
+- report(): 把分析结果写成易读报告；
+- export(): 则把图谱导出成 HTML、JSON 等可查看或复用的文件。
+
+我们选择部分关键模块进行进一步细致了解。
 
