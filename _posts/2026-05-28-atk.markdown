@@ -23,9 +23,150 @@ tags:
 #### 基础版本 v1
 第一个版本的实现方案特别的简单和粗糙，没有进行任何的设计。我直接让大模型撰写了一个Prompt，用于将主线的版本合并至定制化的版本中。整个过程没有进行任何的指导。Codex 直接给了我一个最简单粗糙的版本，初始版本的提示词甚至是不太正确的，其实也不太符合业务预期。对应的提示词如下所示。
 
+```code
+# Role
+你是一名资深 JavaScript 工程师, 负责把两份同源 JavaScript 代码合并成一份.
+
+# Inputs
+- source: 来自上游分支的 JavaScript 代码 (含新功能或修复).
+- target: 来自当前分支的 JavaScript 代码 (含用户本地改动).
+
+# Objective
+基于 source 与 target 的差异, 产出一份合并后的完整 JavaScript 代码, 同时:
+1. 保留双方各自的新增逻辑, 不要丢失任一方的代码片段.
+2. 当两侧对同一处都做了修改且语义冲突时, 优先采纳 source 的实现, 但保留 target 中独立的本地化改动.
+3. 不要改写未变化的代码, 不要重新格式化, 不要添加无关注释.
+4. 保留原有的注释 / 空行 / 缩进风格.
+5. 不要输出任何 Markdown 代码块标记 (```), 也不要输出解释文字, 只输出最终合并后的 JavaScript 源代码.
+
+# source
+{source_js}
 
 
+# target
+{target_js}
 
+
+# Output
+直接输出合并后的完整 JavaScript 代码, 不要包裹在代码块中.
+```
+
+面对这样一份提示词，基于CodeX快速构建了建了批量测试的脚本，基于批量测试的脚本快速得到了测试结果,并将原始数据加上一列Agent的输出列，保存为最终的输出文件。接下来快速，基于CodeX快速实现了一个评测脚本，对现有输出结果进行快速的打分。初始版本实现的是基于完全结果一致来进行判分的。
+
+实际测试的结果发现，准确率只有20%左右。接下来基于CodeX进行一轮分析，给出的结论是判分不太准确，因为严格的字符串匹配是在这种场景下是不太合理的。可是它判定说判定标准过于严格，因为有些情况下，最终的输出与实际的正确答案相对一致。只是在空行上存在一些差异，这种情况下从语义上是完全一致的，于是调整了对应的判分规则，当然也是CodeX实现的。就会发现实际的准确率上升至40%左右。虽然依旧没那么好，但是更加合理了。
+
+#### 调优版本 v2
+在版本V1的基础上，对调整后的结果进行快速的异常数据归因，此时CodeX给出了一个更加符合业务死机业务的判定，他认为原始的判定不够准确，实际很多情况下的准确，正确答案与source不太一致，更加倾向于采取target的方案，同时 codeX敏锐地发现原始数据中存在着营业数据base这个这一列数据可以理解为主线板与定制化版本的公共基线。 CodeX发现，这一列数据对于最终结果的判断有很大的价值。于是，让CodeX基于实际的发现撰写了一个新的方案。在新的方案中， CodeX选择了Base, SaaS, Target。三列的数据作为输入，并在根据实际的数据发现。最终撰写出一份新的提示词。
+
+```
+# Role
+你是一名资深 JavaScript 工程师, 负责基于三方版本把同源 JavaScript 代码合并成一份.
+
+# Inputs
+- base: 两个分支共同的原始 JavaScript 代码.
+- source: 来自上游分支的 JavaScript 代码.
+- target: 来自当前分支的 JavaScript 代码.
+
+# Objective
+基于 base/source/target 的差异, 产出一份合并后的完整 JavaScript 代码, 同时:
+1. 先比较 base -> source 与 base -> target, 只合并真实发生变化的代码.
+2. source 独有且与 target 不冲突的变更要保留; target 独有且与 source 不冲突的变更也要保留.
+3. source 和 target 对同一处都做了修改且无法安全组合时, 优先保留 target 当前分支实现.
+   只补入 source 中独立且不改变 target 语义的改动.
+4. 如果 source 相比 base 删除了注释、console 日志或示例代码, 但 target 保留了它们,
+   不要仅因为 source 删除就移除 target 中的内容.
+5. 不要把注释掉的示例代码改成可执行代码, 也不要把可执行代码改成注释.
+   除非这种改变能从 base -> source 或 base -> target 的真实变更中明确看出.
+6. 不要推断、补写 source/target/base 中都不存在的新业务逻辑.
+7. 不要改写未变化的代码, 不要重新格式化, 不要添加无关注释.
+8. 保留原有的注释 / 空行 / 缩进风格.
+   当 source 与 target 仅格式不同而语义一致时, 以 target 的文本为准.
+9. 不要输出任何 Markdown 代码块标记 (```), 也不要输出解释文字, 只输出最终合并后的 JavaScript 源代码.
+
+# base
+{base_js}
+
+# source
+{source_js}
+
+# target
+{target_js}
+
+# Output
+直接输出合并后的完整 JavaScript 代码, 不要包裹在代码块中.
+```
+
+在这个版本的，字机匹配的准确率达到了87%。同时呢， Code X在进行异常数据的分析过程中发现目前的判断标准依旧不太准确，因为会存在部分情况下代码的代码与正确答案的差异主要来自于空格的缩进。所以导致最终的严格判定存在差异，因此这种情况下应该被判定为正确，调整了标准之后，最终的准确率来到了92%。
+
+#### 调优版本 v3
+继续对现有的异常case进行分析，此时扣的叉发现在进行结果的正确结果的判继续对现有的异常case进行分析，此时 Codex 发现发现特定的数据存在一些明显的规律，在忽略了空行和缩进之后，Base与。与主线版本和定制版本部分情况下可能是一致的。当两当两两出现一致的情况下，一般情况下，最终的答案是与另一方做出修改的保持一致的。在这个情况下，Codex给出了一个明确的短路路径，即当Base与。返回定制版本，当Base与定制版本一致时，返回主线版本。选择的策略可以理解为谁修改了？谁最后修改了，就选择谁。简化版本的代码如下所示:
+
+```
+ if base_js is not None and _equivalent_ignoring_blank_lines_and_indent(base_js, source_js):
+        merged = _match_trailing_newline(target_js, target_js)
+        return SimpleJsMergeResult(
+            merged_js=merged,
+            model=effective_model,
+            elapsed_seconds=0.0,
+            prompt=prompt,
+            raw_output=target_js,
+        )
+
+if base_js is not None and _equivalent_ignoring_blank_lines_and_indent(base_js, target_js):
+    merged = _match_trailing_newline(source_js, source_js)
+    return SimpleJsMergeResult(
+        merged_js=merged,
+        model=effective_model,
+        elapsed_seconds=0.0,
+        prompt=prompt,
+        raw_output=source_js,
+    )
+```
+
+随着策略的加入，准确率提升至93%。虽然准确率的提升相对有限，但是因为有大量的数据都进入了短路的路径，此时处理的效率相对之前的版本有了大幅提升。
+
+在对剩余的7%的结果进行分析的过程中。 Codex给了另一个相对惊喜的结论。剩余的之所以无法正确回答，主要原因来自于数据集本身存在着一些问题，即正确答案中包含了一些无法从原始的主线和定制版本。中可以正确推导出的内容，基于人工进行了一些后置的调整。这种情况下，事实上应该属于超出了这个业务本身的需求范围。最终其给出的结论是，这部分数据集应该从原始数据集中进行剔除。对应的报告如下所示：
+
+```markdown
+
+7 条 mismatch：
+
+| row | asset_name | 结论 |
+| ---: | --- | --- |
+| 38 | `checkBKPermission` | `ground_truth` 有额外逻辑，输入三方都没有 |
+| 52 | `initBKSystemConfig` | `ground_truth` 有额外配置项，输入三方都没有 |
+| 60 | `queryBKCustomerSystemConfigs` | `ground_truth` 有额外 key 与参数变化，输入三方都没有 |
+| 72 | `queryBKPermissionSPI` | `ground_truth` 有完整 RBAC 查询逻辑，输入三方都没有 |
+| 85 | `queryBKStoreOrderBriefList` | `ground_truth` 多了 `searchContent/timeSortRule`，输入三方都没有 |
+| 87 | `queryBKStoreOrderList` | `ground_truth` 多了 `searchContent/timeSortRule`，输入三方都没有 |
+| 89 | `queryBKStoreResourceOrder` | `ground_truth` 与 target 的字段访问方式冲突，且包含输入中不存在的 log |
+
+## 核心结论
+
+### Rank 1 — 主要原因：`ground_truth` 无法由 `base/source/target` 推导出来
+
+**Confidence: High**
+
+```
+
+实际对最终的数据集进行了人工检查，发现扣叉给出的结论是真实的，确实存在部分数据集是无法正确推导的，这部分数据集无法在目前的业务中作为正确答案进行参考。剔除后，当前版本甚至取得了接近100%的成绩。所以对于这个结果，远远超出了我原本的预期。 Code X找到了一条执行效率特别高，而且准确率特别惊人的解决方案。远远超出了我最初对他的，对这个项目解法的规划。
 
 ## Agent-Tune-Kit 简介
 
+从本次迭代的过程出。出发，我对整个调优过程进行必要的抽象之后。将完整从本次迭代的过程出。出发，我对整个调优过程进行必要的抽象之后。将完整的调优过程演变成了一个可以持续迭代。的Code叉插件，在目前的这个阶段下， Code叉确实是一个相对不错的 aI辅助开发工具。因此整体的项目都是直接复用Code叉原有的能力，只是将整个词调优过程给给skill化，并将相关的执行链路给相对标准化，方便整个流程可以更容易地串联起来。最终的整体的架构图如下所示。
+
+![arch](/img/in-post/atk/arch.png)
+
+我将整个项目定位为基于CodeX的无指标化的AI First的Agent调优项目，尽可能地借助AI本身的分析推理能力，在不预设方向的情况下，利用AI本身的推理能力去找到Agent本身中存在的问题，借助问题。以及AI查看本地的代码结合进行归因分析之后自动执行调优，最终完成完整的闭环，将Agent持续地迭代优化，直到达到上线的要求。核心步骤
+
+1. atk-init: 此脚本用于生成批量测试的脚本，你只需要告诉此插件，你的Agent的位置，以及可以用于评测的数据集的位置。有插件帮你完成所有的批量测试的脚本。
+2. atk-run: 执行批量测试，生成批量测试的结果，直接执行即可。无需撰写任何代码
+3. atk-find-failures：借助AI的推理能力，从批量测试的结果中找到异常数据集。并过滤出来，方便进行后续的分析。但如果你本身不，已经知道你的数据集如何进行？异常数据集的判断跟过滤，这个时候你可以告诉 aI你的判断标准，AI可以根据你的标准去撰写合适的异常数据集的过滤脚本之后再执行命令完成异常数据集的过滤
+4. atk-report: 执行异常数据集的分析推理，找到出现异常的原因，以及建议调优的方案。
+5. atk-tune:根据建议条约的方向去执行Agent的调优，直接修改你的代码。
+
+接下来重新执行ATK run进行一轮回归，此时确认原始的问题是否已经被修正，然后找到新版本中存在的问题。进行下一轮的调优，持续迭代直到 agent 可用为止。
+
+## 总结
+
+本文是对过去一周探索的一个总结。在实践的过程中，因为Agent调优的困难，最终找到了一条相对简单的迭代调优的方案。当然，AI并不能帮你解决所有的问题，但是对于一些相对重复的问题。人应该在AI无法完成的时候再介入进去，将核心的精力花费在自动化手段无法完成的情况下，因为人的精力是很宝贵的，我们需要珍惜自己超出AI的部分，将所有能外包出去的外包出去。目前这个AI时代，我们也应该学着和AI和解，充分利用AI现有的能力，放大个人的能力，才能在这个AI的浪潮中生存下去。本项目因为还在持续迭代中，可能会存在一些问题，欢迎大家积极给我反馈，我会及时的处理跟进优化，如果对你有所帮助，欢迎大家给我一些鼓励。
